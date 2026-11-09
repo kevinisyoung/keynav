@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KeyNav: Use your Mac without a mouse</title>
+<meta name="description" content="Keyboard navigation for macOS. Click any button by typing its label, scroll with Vim keys, and move the pointer without touching the mouse. Free for 14 days.">
+<link rel="canonical" href="https://keynav.app/">
+<link rel="icon" href="icon.png?v=2">
+<script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  } }
+</script>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="KeyNav">
+<meta property="og:url" content="https://keynav.app/">
+<meta property="og:title" content="KeyNav: Use your Mac without a mouse">
+<meta property="og:description" content="Click, scroll, and move the pointer from the keyboard. Free for 14 days.">
+<meta property="og:image" content="https://keynav.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "KeyNav",
+  "url": "https://keynav.app/",
+  "description": "Keyboard navigation for macOS: click any button by typing its label, scroll with Vim keys, and move the pointer from the keyboard.",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "macOS 14 or later",
+  "downloadUrl": "https://keynav.app/download/KeyNav.dmg",
+  "image": "https://keynav.app/icon.png",
+  "offers": { "@type": "Offer", "price": "39", "priceCurrency": "USD" }
+}
+</script>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --text: #141416;
+    --muted: #66666e;
+    --line: rgba(0, 0, 0, 0.08);
+    --window: rgba(252, 252, 251, 0.96);
+    --sidebar: rgba(240, 240, 238, 0.9);
+    --control: #ebebe8;
+    --row: rgba(0, 0, 0, 0.05);
+    --accent: #2f6bff;
+    --label-top: #fff7b4;
+    --label-bottom: #fce36a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0e10;
+      --text: #f3f3f5;
+      --muted: #9a9aa4;
+      --line: rgba(255, 255, 255, 0.09);
+      --window: rgba(36, 36, 41, 0.96);
+      --sidebar: rgba(30, 30, 34, 0.92);
+      --control: #3a3a41;
+      --row: rgba(255, 255, 255, 0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  h1, h2, p { text-wrap: balance; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+
+  nav.wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; }
+  .brand img { width: 30px; height: 30px; }
+  .nav-link { color: var(--text); text-decoration: none; font-size: 15px; font-weight: 550; }
+  .nav-note { color: var(--muted); font-weight: 400; }
+
+  header.wrap { position: relative; text-align: center; padding-top: 72px; padding-bottom: 80px; }
+  header.wrap > :not(#keyboard, .sound) { position: relative; z-index: 1; }
+  /* The keys sit behind the title, fading out toward the edges. */
+  #keyboard {
+    position: absolute; z-index: 0; left: 50%; top: -40px; bottom: -20px; width: min(1500px, 100vw); transform: translateX(-50%);
+    -webkit-mask-image: radial-gradient(ellipse 60% 62% at 50% 52%, #000 40%, transparent 100%);
+    mask-image: radial-gradient(ellipse 60% 62% at 50% 52%, #000 40%, transparent 100%);
+  }
+  #keyboard canvas { display: block; width: 100%; height: 100%; opacity: 0.7; filter: blur(1.4px); }
+  header.wrap h1, header.wrap .lede { text-shadow: 0 0 18px var(--bg), 0 0 36px var(--bg); }
+
+  /* The ripple from the space bar, and the label hints it leaves behind. */
+  body { position: relative; }
+  #ripples { position: absolute; left: 0; top: 0; width: 100%; overflow: hidden; pointer-events: none; z-index: 5; }
+  /* Under the demo windows, which sit on their own layer above it. */
+  #ascii { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; }
+  .desktop { z-index: 1; }
+  .hint {
+    position: absolute; transform: translateX(-50%);
+    font: 800 11px/1 -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.02em; color: #111;
+    padding: 4px 5px 3px; border-radius: 4px;
+    background: linear-gradient(var(--label-top), var(--label-bottom));
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+    animation: hint 2.8s ease forwards;
+  }
+
+  .hint.again { animation-name: hint-again; }
+  /* The demos while the music plays: a typed label goes blue and its button presses, the scroll area gets
+     KeyNav's outline, and a pointer steps across the board and clicks. */
+  .hint.typed { background: var(--accent); color: #fff; box-shadow: none; }
+  .download { transition: transform 0.12s ease; }
+  .download.pressed { transform: scale(0.95); }
+  .demo-window {
+    position: absolute; width: 260px; padding: 10px 0 0; border-radius: 14px; background: var(--bg);
+    border: 1px solid var(--line); box-shadow: 0 16px 44px rgba(0, 0, 0, 0.2); pointer-events: none;
+    opacity: 0; transform: translate(-50%, -50%) scale(0.96); transition: opacity 0.35s ease, transform 0.45s ease;
+  }
+  .demo-window.on { opacity: 1; transform: translate(-50%, -50%); }
+  .demo-window .lights { display: flex; gap: 6px; padding: 0 12px 8px; }
+  .demo-window .lights i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .demo-window .list { height: 140px; margin: 0 8px 8px; overflow: hidden; border-radius: 8px; outline: 2px solid transparent; transition: outline-color 0.25s ease; }
+  .demo-window .list.outlined { outline-color: var(--accent); }
+  .demo-window .list > div { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .demo-window p { height: 28px; margin: 0; padding: 0 10px; display: flex; align-items: center; font-size: 13px; border-radius: 6px; }
+  .demo-window p.picked { background: var(--accent); color: #fff; }
+  .move-pointer {
+    position: absolute; left: 0; top: 0; width: 30px; height: 41px; opacity: 0; pointer-events: none;
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35));
+    transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease;
+  }
+  .move-pointer.on { opacity: 1; }
+  .move-pointer svg { width: 100%; height: 100%; }
+  .move-pointer.clicking::after {
+    content: ""; position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid var(--accent); animation: click-ring 0.5s ease-out forwards;
+  }
+  @keyframes click-ring { from { transform: scale(0.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+  /* Larger while the music plays, so they read at a glance. */
+  body.music .hint { font-size: 15px; padding: 6px 7px 5px; border-radius: 6px; }
+  @keyframes hint-again {
+    0%, 80% { opacity: 0.95; }
+    100% { opacity: 0; }
+  }
+  @keyframes hint {
+    0% { opacity: 0; transform: translate(-50%, 3px) scale(0.92); }
+    6% { opacity: 0.95; transform: translate(-50%, 0) scale(1); }
+    80% { opacity: 0.95; }
+    100% { opacity: 0; }
+  }
+  h1 { font-size: clamp(40px, 7vw, 68px); line-height: 1.04; letter-spacing: -0.035em; margin: 0 auto 18px; max-width: 13ch; }
+  .lede { font-size: clamp(18px, 2.3vw, 21px); color: var(--muted); max-width: 38ch; margin: 0 auto 30px; }
+  .download {
+    display: inline-flex; align-items: center; gap: 9px; padding: 14px 24px; border-radius: 999px;
+    background: var(--text); color: var(--bg); text-decoration: none; font-weight: 600; font-size: 16px;
+  }
+  .download svg { width: 15px; height: 18px; fill: currentColor; margin-top: -2px; }
+  .requirement { display: block; margin-top: 14px; font-size: 14px; color: var(--muted); }
+  /* Plays the keyboard to a song; off until pressed. */
+  .sound {
+    position: absolute; z-index: 1; right: 24px; bottom: 24px; width: 36px; height: 36px; border: 0; border-radius: 50%;
+    display: grid; place-items: center; background: none; color: var(--muted); cursor: pointer;
+  }
+  .sound:hover { color: var(--text); }
+
+  /* With the music on, the page steps back to the title, the download and the shortcuts; the keyboard slides
+     down below the download, and each mode's name shows under its shortcut as the keyboard plays it. */
+  header .lede { max-height: 120px; transition: opacity 0.6s ease, max-height 0.9s ease, margin 0.9s ease; }
+  body.music header .lede { opacity: 0; max-height: 0; margin-bottom: 0; }
+  header.wrap { transition: padding-bottom 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  body.music header.wrap { padding-bottom: calc(var(--room, 0px) + 56px); }
+  .slide > :not(.combo), .replay, .pills, body > footer { transition: opacity 0.6s ease; }
+  body.music .slide > :not(.combo), body.music .replay, body.music .pills, body.music > footer { opacity: 0; pointer-events: none; }
+  #keyboard { transition: transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  body.music #keyboard { transform: translate(-50%, var(--slide, 0px)); }
+  #keyboard canvas { transition: opacity 0.6s ease, filter 0.6s ease; }
+  body.music #keyboard canvas { opacity: 1; filter: none; }
+  /* From the drop, the headline names the mode playing, with a bar under it like the carousel's. */
+  header h1 { display: grid; align-items: center; }
+  header h1 > span { grid-area: 1 / 1; transition: opacity 0.25s ease; }
+  header h1 .cine { opacity: 0; }
+  header h1.naming .title { opacity: 0; }
+  header h1.naming .cine.on { opacity: 1; }
+  .cine-bar {
+    display: flex; justify-content: center; gap: 8px; max-height: 0; margin: 0 auto; overflow: hidden; opacity: 0;
+    transition: opacity 0.4s ease, max-height 0.6s ease, margin 0.6s ease;
+  }
+  body.music .cine-bar { max-height: 8px; margin-bottom: 26px; opacity: 1; }
+  .cine-bar span { width: 28px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; transition: width 0.3s; }
+  .cine-bar span.active { width: 72px; }
+  .cine-bar i { display: block; height: 100%; width: 0; background: var(--text); border-radius: 4px; }
+  .cine-bar span.done i { width: 100%; }
+  .cine-bar span.active i { animation: fill var(--t, 3.7s) linear forwards; }
+  /* With the music on, the hint is just its keys; the headline says what they do. */
+  body.music .slide .combo > span { display: none; }
+  /* The shortcut hints wait for their shortcut, and its keys go down with the board's. */
+  .slide .combo { transition: opacity 0.3s ease; }
+  /* The carousel jumps rather than slides, so each hint just fades in. */
+  body.music .track { transition: none; }
+  body.music .slide .combo:not(.shown) { opacity: 0; }
+  .combo kbd { transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease; }
+  .combo kbd.down { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sound svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .sound .on, .sound[aria-pressed="true"] .off { display: none; }
+  .sound[aria-pressed="true"] .on { display: inline; }
+  /* Once it has played, it offers to play again. */
+  .sound .again, .sound.played:not([aria-pressed="true"]) .speaker { display: none; }
+  .sound.played:not([aria-pressed="true"]) .again { display: inline; }
+  /* While the forest loops, a mute button sits beside Replay. */
+  .sound.mute { right: 64px; }
+  .sound[hidden] { display: none; }
+
+  /* A desktop: wallpaper with a window on it. */
+  .desktop {
+    position: relative; border-radius: 28px; overflow: hidden; padding: 56px 56px 0;
+    background:
+      radial-gradient(60% 80% at 12% 10%, #ffb48a 0%, transparent 60%),
+      radial-gradient(55% 70% at 88% 18%, #b9a6ff 0%, transparent 62%),
+      radial-gradient(70% 70% at 60% 110%, #3c3fb8 0%, transparent 65%),
+      radial-gradient(50% 60% at 20% 95%, #ff7aa8 0%, transparent 60%),
+      linear-gradient(160deg, #f6c9b4, #8f8cf0 55%, #2c2f8f);
+  }
+  .desktop.teal {
+    background:
+      radial-gradient(60% 80% at 85% 10%, #b7f3e4 0%, transparent 60%),
+      radial-gradient(60% 70% at 10% 30%, #7fd3ff 0%, transparent 60%),
+      radial-gradient(70% 70% at 50% 115%, #155e75 0%, transparent 65%),
+      linear-gradient(170deg, #d4f5ef, #5bb6d6 55%, #134e63);
+  }
+  .desktop.plum {
+    background:
+      radial-gradient(60% 80% at 15% 15%, #ffd6f0 0%, transparent 60%),
+      radial-gradient(60% 70% at 90% 40%, #c48cff 0%, transparent 60%),
+      radial-gradient(70% 70% at 40% 115%, #5b2a86 0%, transparent 65%),
+      linear-gradient(165deg, #f7d9ee, #b17ae6 55%, #43206b);
+  }
+  .window {
+    position: relative; max-width: 880px; margin: 0 auto; border-radius: 14px 14px 0 0;
+    background: var(--window); border: 1px solid rgba(255, 255, 255, 0.5); border-bottom: 0;
+    box-shadow: 0 30px 70px -20px rgba(20, 20, 60, 0.45), 0 0 0 0.5px rgba(0, 0, 0, 0.18);
+    display: grid; grid-template-columns: 190px 1fr; min-height: 340px; text-align: left;
+  }
+  /* In the hero the window sits left so the shortcuts panel rests on the wallpaper beside it. */
+  .hero .window { max-width: calc(100% - 270px); margin: 0; min-height: 400px; }
+  @media (max-width: 1000px) {
+    .hero .window { max-width: none; }
+    .hero { padding-bottom: 24px; }
+    .desktop .shortcuts { position: relative; right: auto; bottom: auto; margin: 20px auto 0; max-width: 320px; }
+  }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--line); border-top-left-radius: 14px; padding: 14px 10px; }
+  .lights { display: flex; gap: 8px; padding: 2px 6px 18px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2); }
+  .lights i:nth-child(1) { background: #ff5f57; }
+  .lights i:nth-child(2) { background: #febc2e; }
+  .lights i:nth-child(3) { background: #28c840; }
+  .rows { display: grid; gap: 20px; }
+  .content { padding: 18px 24px 40px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 26px; }
+  .tile {
+    position: relative; height: 36px; border-radius: 9px; background: var(--control);
+    display: grid; place-items: center; font-size: 14px; color: var(--muted); transition: background 0.2s, color 0.2s;
+  }
+  .toolbar .tile { width: 36px; height: 30px; border-radius: 8px; }
+  .row { position: relative; height: 26px; border-radius: 7px; padding: 0 10px; display: flex; align-items: center; font-size: 13px; color: var(--muted); }
+  .row.on { background: var(--row); color: var(--text); }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px 14px; }
+  .hit { background: var(--accent) !important; color: #fff !important; }
+
+  .label {
+    position: absolute; left: 50%; top: calc(100% - 4px); transform: translateX(-50%); z-index: 2;
+    font: 800 12px/1 -apple-system, BlinkMacSystemFont, sans-serif; letter-spacing: 0.02em; color: #111;
+    padding: 4px 6px 3px; border-radius: 4px; white-space: nowrap;
+    background: linear-gradient(var(--label-top), var(--label-bottom));
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.15);
+    visibility: hidden;
+  }
+  .row .label { left: 30px; }
+  /* The arrow: a dark triangle for the outline, and a yellow one 1px inside it that overlaps the label's top
+     border, so the arrow joins the label without a seam. */
+  .label::before, .label::after, .hint::before, .hint::after {
+    content: ""; position: absolute; left: 50%; width: 10px; margin-left: -5px;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  }
+  .label::before, .hint::before { top: -5px; height: 5px; background: rgba(0, 0, 0, 0.55); }
+  .label::after, .hint::after { top: -4px; height: 5px; background: var(--label-top); }
+  /* Typed letters only fade; they keep the label's size and weight wherever the label sits. */
+  .label > b, .message .label > b { opacity: 0.3; font: inherit; }
+  .label.pop { animation: label-in 0.18s ease-out; }
+  @keyframes label-in {
+    from { opacity: 0; transform: translate(-50%, 3px) scale(0.92); }
+    to { opacity: 1; transform: translateX(-50%); }
+  }
+  .label.done { background: linear-gradient(#c9f7d8, #6fdc95); transform: translateX(-50%) scale(1.15); transition: transform 0.15s; }
+  .label.done::after { background: #c9f7d8; }
+
+  /* Team chat window. */
+  .chat { grid-template-columns: 180px 1fr; font-size: 14px; }
+  .chat .sidebar {
+    background: linear-gradient(180deg, #3b2f86, #2a2168); color: rgba(255, 255, 255, 0.7);
+    border-right: 0; padding: 14px 10px; display: flex; flex-direction: column; gap: 18px;
+  }
+  .team { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 15px; padding: 0 8px; }
+  .team i { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg, #ffb48a, #ff7aa8); display: grid; place-items: center; font-style: normal; font-size: 13px; color: #2a2168; font-weight: 800; }
+  .group { display: grid; gap: 2px; }
+  .group-title { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.5); padding: 0 8px 4px; }
+  .chat .row { height: 28px; padding: 0 8px; gap: 8px; color: rgba(255, 255, 255, 0.72); font-size: 14px; border-radius: 6px; }
+  .chat .row.on { background: rgba(255, 255, 255, 0.16); color: #fff; }
+  .chat .row.unread { color: #fff; font-weight: 650; }
+  .badge { margin-left: auto; background: #ff5c8a; color: #fff; font-size: 11px; font-weight: 700; border-radius: 9px; padding: 1px 7px; }
+  .mini { width: 18px; height: 18px; border-radius: 5px; display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; position: relative; }
+  .mini::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 7px; height: 7px; border-radius: 50%; background: #2bd27f; box-shadow: 0 0 0 2px #2e2470; }
+
+  .chat .content { display: flex; flex-direction: column; padding: 0; }
+  .channel { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .channel b { font-size: 15px; }
+  .channel .topic { color: var(--muted); font-size: 13px; }
+  .faces { margin-left: auto; display: flex; align-items: center; }
+  .channel .pill { margin-left: 4px; }
+  .faces .avatar { width: 24px; height: 24px; border-radius: 7px; font-size: 11px; margin-left: -6px; box-shadow: 0 0 0 2px var(--window); }
+  .faces .count { margin-left: 8px; color: var(--muted); font-size: 13px; }
+  .messages { padding: 16px 20px 4px; display: grid; gap: 16px; }
+  .message { display: flex; gap: 12px; }
+  .message p { margin: 2px 0 0; color: var(--text); line-height: 1.45; }
+  .message b { font-size: 14px; }
+  .time { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .avatar { flex: none; width: 36px; height: 36px; border-radius: 9px; color: #fff; display: grid; place-items: center; font-style: normal; font-weight: 700; }
+  .meta-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .pill {
+    position: relative; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 13px;
+    border: 1px solid var(--line); background: var(--window); font-size: 12.5px; color: var(--text); transition: background 0.2s, color 0.2s, border-color 0.2s;
+  }
+  .meta-row + .meta-row { margin-top: 18px; }
+  .pill.mine { border-color: rgba(47, 107, 255, 0.45); background: rgba(47, 107, 255, 0.08); }
+  .thread { position: relative; display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 600; font-size: 13px; padding: 3px 6px; margin-left: -6px; border-radius: 6px; transition: background 0.2s, color 0.2s; }
+  .thread .faces { margin-left: 4px; }
+  .thread .faces .avatar { width: 18px; height: 18px; font-size: 9px; border-radius: 5px; }
+  .thread .last { color: var(--muted); font-weight: 400; }
+  .composer { margin: auto 20px 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--window); }
+  .composer .field-text { padding: 12px 14px 6px; color: var(--muted); }
+  .composer .tools { display: flex; align-items: center; gap: 12px; padding: 6px 8px 8px 14px; color: var(--muted); font-size: 13px; }
+  .tool { position: relative; width: 26px; height: 24px; border-radius: 6px; display: grid; place-items: center; font-weight: 600; }
+  .composer .send { position: relative; margin-left: auto; width: 32px; height: 28px; border-radius: 7px; background: #1f9d55; color: #fff; display: grid; place-items: center; font-size: 13px; }
+  .thread.hit, .pill.hit { background: var(--accent); color: #fff; border-color: transparent; }
+  .thread.hit .last { color: rgba(255, 255, 255, 0.85); }
+
+  /* Replays the slide showing: its shortcut on the keyboard, then its demo. */
+  .replay {
+    position: absolute; top: 66px; right: 16px; z-index: 4; width: 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer; color: #fff;
+    background: rgba(28, 28, 36, 0.4); border: 1px solid rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: background 0.2s, transform 0.2s;
+  }
+  .replay:hover { background: rgba(28, 28, 36, 0.6); }
+  .replay:active { transform: rotate(-40deg); }
+  .replay svg { width: 17px; height: 17px; }
+  @media (prefers-reduced-motion: reduce) { .replay { display: none; } }
+
+  /* The floating shortcuts panel. */
+  .shortcuts {
+    position: absolute; right: 24px; bottom: 24px; z-index: 2; min-width: 250px;
+    padding: 6px; border-radius: 16px; color: #fff; font-size: 15px;
+    background: rgba(28, 28, 36, 0.55); backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 20px 40px -16px rgba(0, 0, 0, 0.5);
+  }
+  .shortcuts div { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 9px 10px; }
+  .shortcuts div + div { border-top: 1px solid rgba(255, 255, 255, 0.1); }
+  kbd {
+    display: inline-block; min-width: 24px; padding: 2px 7px; margin-left: 4px; border-radius: 6px; text-align: center;
+    font: 600 12.5px/1.5 -apple-system, BlinkMacSystemFont, sans-serif;
+    background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff;
+  }
+
+  /* Mode sections. */
+  section.wrap { padding-top: 120px; }
+  .viewport { position: relative; overflow: hidden; border-radius: 28px; }
+  /* The carousel is the demo now, right under the title. */
+  section.wrap.carousel { padding-top: 0; }
+  .track { display: flex; transition: transform 0.7s cubic-bezier(0.65, 0, 0.35, 1); }
+  .slide { flex: 0 0 100%; position: relative; }
+  .slide .hint { z-index: 2; }
+  .slide h2 { text-align: center; font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.03em; line-height: 1.1; margin: 36px 0 10px; }
+  .slide .note { font-size: 14px; margin-top: 8px; }
+  .slide .combo { display: flex; justify-content: center; align-items: center; gap: 6px; max-width: none; margin: 0 0 20px; font-size: 17px; font-weight: 600; }
+  .slide .combo kbd { min-width: 30px; height: 30px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 1px 0 var(--line);
+    font: 600 14px/28px -apple-system, BlinkMacSystemFont, sans-serif; text-align: center; color: var(--text); background: var(--window); }
+  .slide .combo span { margin-left: 6px; }
+  .slide .combo svg { width: 76px; margin-right: 10px; }
+  .combo rect { fill: color-mix(in srgb, var(--text) 16%, transparent); }
+  .combo rect.mode { fill: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .combo rect.on { fill: var(--accent); }
+  .slide p { text-align: center; color: var(--muted); font-size: 19px; max-width: 48ch; margin: 0 auto; }
+  .pills { display: flex; justify-content: center; gap: 8px; margin-top: 32px; }
+  .pills button { width: 28px; height: 8px; padding: 0; border: 0; border-radius: 4px; background: var(--line); cursor: pointer; overflow: hidden; transition: width 0.3s; }
+  .pills button.active { width: 72px; }
+  .pills i { display: block; height: 100%; width: 0; background: var(--text); border-radius: 4px; }
+  .pills button.active i { animation: fill var(--slide-time, 7s) linear forwards; }
+  @keyframes fill { to { width: 100%; } }
+  .scene .window { grid-template-columns: 1fr; min-height: 300px; max-width: 760px; }
+  .scene .content { padding-top: 14px; }
+
+  /* Clicking: a music app on an album. */
+  .player { grid-template-columns: 180px 1fr !important; font-size: 13px; }
+  .player .side { padding: 14px 10px; background: var(--sidebar); border-right: 1px solid var(--line); border-top-left-radius: 14px; display: grid; align-content: start; gap: 10px; }
+  .player .side small { padding: 0 8px; font-size: 11px; font-weight: 600; color: var(--muted); }
+  .album-link { position: relative; display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-radius: 6px; color: var(--text); }
+  .album-link.on { background: var(--row); }
+  .album-link i { width: 26px; height: 26px; border-radius: 4px; flex: none; }
+  .player .side .label, .album-link .label { left: 21px; }
+  .player main { padding: 18px 22px 24px; }
+  .player .m-lights { display: none; }
+  .player header { display: flex; align-items: flex-end; gap: 18px; }
+  .player header h3 { margin: 0 0 2px; font-size: 24px; letter-spacing: -0.02em; line-height: 1.15; }
+  .player header .by { color: var(--accent); font-weight: 600; font-size: 15px; }
+  .player header .meta { margin: 2px 0 12px; font-size: 12px; color: var(--muted); }
+  .buttons { display: flex; gap: 8px; align-items: center; }
+  .pill-btn { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 14px; border-radius: 7px; background: var(--accent); color: #fff; font-weight: 600; }
+  .pill-btn.soft { background: var(--control); color: var(--accent); }
+  .pill-btn svg { width: 11px; height: 11px; fill: currentColor; }
+  .more { position: relative; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--accent); }
+  .more svg { width: 16px; height: 16px; }
+  /* The menu the demo opens from the more button. */
+  .menu {
+    position: absolute; top: calc(100% + 6px); left: -6px; z-index: 3; display: none; min-width: 190px; padding: 5px;
+    border-radius: 9px; background: var(--window); color: var(--text); font-weight: 400; text-align: left;
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 10px 30px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); animation: menu-in 0.14s ease-out 0.65s backwards;
+  }
+  .more.hit .menu { display: grid; }
+  .menu span { padding: 5px 9px; border-radius: 5px; white-space: nowrap; }
+  .menu span:last-child { display: grid; background: var(--accent); color: #fff; }
+  .menu small { font-size: 11.5px; opacity: 0.8; }
+  .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+  @keyframes menu-in { from { opacity: 0; transform: translateY(-3px); } }
+  /* Album covers, drawn in the grey of the record's own art. */
+  .cover { width: 120px; height: 120px; border-radius: 6px; flex: none; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); }
+  .art-altered { background: repeating-linear-gradient(172deg, transparent 0 5px, rgba(0, 0, 0, 0.35) 5px 6px) 0 62% / 100% 30% no-repeat, radial-gradient(40% 32% at 50% 34%, #3a3a3a, transparent), #7b7b7b; }
+  .art-state { background: radial-gradient(40% 32% at 50% 36%, #1c1c1c, transparent), #8e8e8e; }
+  .art-origin { background: linear-gradient(160deg, #d8d1c4, #6f675b); }
+  .art-archetype { background: linear-gradient(200deg, #1d2430, #4a5568); }
+  .art-virtue { background: linear-gradient(135deg, #e9e9e9, #a3a3a3); }
+  .songs { margin-top: 16px; border-top: 1px solid var(--line); }
+  .song { position: relative; display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 10px; height: 38px; padding: 0 8px; border-bottom: 1px solid var(--line); color: var(--text); }
+  .song small { color: var(--muted); font-size: 12px; }
+  .song .label { left: 15px; }
+  .song.hit small { color: rgba(255, 255, 255, 0.85); }
+  /* Scrolling: a database that is wider and taller than its window. */
+  .db-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 2px 4px 10px; }
+  .db { position: relative; height: 236px; overflow: hidden; margin: 0 4px; border-top: 1px solid var(--line); font-size: 13px; }
+  .db table { position: absolute; top: 0; left: 0; border-collapse: collapse; width: 1000px; table-layout: fixed; animation: pan 6.5s ease-in-out infinite; }
+  .db th, .db td { text-align: left; padding: 0 10px; height: 34px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+  .db th { font-weight: 500; color: var(--muted); }
+  .db td:first-child { font-weight: 500; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; background: var(--row); }
+  .tag.done { background: #dbeddb; color: #1c3829; }
+  .tag.doing { background: #d3e5ef; color: #183347; }
+  .tag.high { background: #ffe2dd; color: #5d1715; }
+  .tag.med { background: #fdecc8; color: #402c1b; }
+  .who { display: inline-flex; align-items: center; gap: 6px; }
+  .who i { width: 18px; height: 18px; border-radius: 50%; display: inline-block; }
+  /* H, then L, then J, then K: it starts scrolled right so H has somewhere to go. */
+  @keyframes pan {
+    0%, 6% { transform: translate(-300px, 0); }
+    22%, 28% { transform: translate(0, 0); }
+    46%, 52% { transform: translate(-300px, 0); }
+    70%, 76% { transform: translate(-300px, -206px); }
+    92%, 100% { transform: translate(-300px, 0); }
+  }
+  .dot { position: absolute; left: 62%; top: 52%; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px #fff, 0 2px 6px rgba(0, 0, 0, 0.3); }
+
+  /* Moving: drag a photo onto an album. */
+  .field { position: relative; height: 250px; }
+  .file, .album { position: absolute; display: grid; justify-items: center; gap: 6px; font-size: 12.5px; color: var(--text); }
+  .file { left: 10%; top: 20px; z-index: 1; animation: carry 4s ease-in-out infinite; }
+  @keyframes carry {
+    0%, 10% { left: 10%; top: 20px; opacity: 1; transform: none; }
+    45% { left: calc(88% - 96px); top: 128px; opacity: 0.85; transform: none; }
+    50% { left: calc(88% - 96px); top: 128px; opacity: 0.85; transform: none; }
+    56% { left: calc(88% - 96px); top: 128px; opacity: 0; transform: scale(0.4); }
+    90% { left: 10%; top: 20px; opacity: 0; transform: scale(0.9); }
+    96%, 100% { left: 10%; top: 20px; opacity: 1; transform: none; }
+  }
+  .file img { width: 96px; height: 72px; object-fit: contain; padding: 6px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 1px var(--line), 0 2px 6px rgba(0, 0, 0, 0.08); }
+  .album { right: 12%; top: 128px; }
+  .album .folder { position: relative; width: 96px; height: 72px; display: grid; place-items: center; }
+  .album svg { width: 72px; }
+  .album .folder::after {
+    content: ""; position: absolute; inset: -6px; border-radius: 10px; border: 2px dashed var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent); opacity: 0; transform: scale(0.94);
+    animation: hover 4s ease infinite;
+  }
+  @keyframes hover {
+    0%, 42% { opacity: 0; transform: scale(0.94); }
+    46%, 58% { opacity: 1; transform: scale(1); }
+    62%, 100% { opacity: 0; transform: scale(0.94); }
+  }
+  .pointer { position: absolute; z-index: 2; width: 18px; animation: glide 4s ease-in-out infinite, arrow 4s step-end infinite; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+  /* While it carries the photo the arrow becomes the closed hand, centred where the arrow's tip was. */
+  .pointer.grab { width: 22px; margin: -9px 0 0 -10px; animation: glide 4s ease-in-out infinite, grab 4s step-end infinite; }
+  @keyframes arrow { 0% { opacity: 1; } 10% { opacity: 0; } 50% { opacity: 1; } }
+  @keyframes grab { 0% { opacity: 0; } 10% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes glide {
+    0%, 10% { left: calc(10% + 52px); top: 58px; }
+    45%, 60% { left: calc(88% - 44px); top: 166px; }
+    95%, 100% { left: calc(10% + 52px); top: 58px; }
+  }
+
+  /* Key outlines under the scroll and move demos, laid out as on the keyboard and pressed in time with them. */
+  .keys { display: flex; justify-content: center; align-items: flex-end; gap: 6px; margin: 14px 0 18px; }
+  .keys .gap { width: 0; margin: 0 -2px; }
+  .keys .cluster { display: grid; grid-template-columns: repeat(3, auto); gap: 6px; }
+  .keys .cluster .i { grid-area: 1 / 2; }
+  .keys .cluster .j { grid-area: 2 / 1; }
+  .keys .cluster .k { grid-area: 2 / 2; }
+  .keys .cluster .l { grid-area: 2 / 3; }
+  .keys .cluster .space { grid-area: 3 / 1 / 4 / 4; }
+  .keys span {
+    position: relative; min-width: 28px; padding: 0 8px; height: 28px; border-radius: 7px; text-align: center;
+    font: 600 12.5px/26px -apple-system, BlinkMacSystemFont, sans-serif; color: var(--muted); border: 1px solid var(--line);
+    box-shadow: 0 1px 0 var(--line);
+  }
+  .keys span::after {
+    content: attr(data-k); position: absolute; inset: -1px; border-radius: inherit; opacity: 0;
+    border: 1px solid var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--window));
+  }
+  .scrolling .j::after { animation: pan-down 6.5s infinite; }
+  .scrolling .l::after { animation: pan-right 6.5s infinite; }
+  .scrolling .k::after { animation: pan-up 6.5s infinite; }
+  .scrolling .h::after { animation: pan-left 6.5s infinite; }
+  .moving .k::after, .moving .l::after { animation: move-out 4s infinite; }
+  .moving .i::after, .moving .j::after { animation: move-back 4s infinite; }
+  /* On the Moving demo the keys carry the story, so they are larger and press in solid blue. */
+  .moving.keys, .moving .cluster { gap: 7px; }
+  .moving span { min-width: 36px; height: 36px; border-radius: 9px; font-size: 15px; line-height: 34px; color: var(--text);
+    border-color: rgba(0, 0, 0, 0.16); background: var(--window); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.12); }
+  .moving span::after { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .moving .space::after { animation: move-hold 4s infinite; }
+  @keyframes pan-left { 0%, 5% { opacity: 0; } 6%, 21% { opacity: 1; } 22%, 100% { opacity: 0; } }
+  @keyframes pan-right { 0%, 27% { opacity: 0; } 28%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
+  @keyframes pan-down { 0%, 51% { opacity: 0; } 52%, 69% { opacity: 1; } 70%, 100% { opacity: 0; } }
+  @keyframes pan-up { 0%, 75% { opacity: 0; } 76%, 91% { opacity: 1; } 92%, 100% { opacity: 0; } }
+  @keyframes move-out { 0%, 9% { opacity: 0; } 10%, 44% { opacity: 1; } 45%, 100% { opacity: 0; } }
+  /* Space goes down as the photo is picked up and comes up as it drops into the album. */
+  @keyframes move-hold { 0%, 9% { opacity: 0; } 10%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  @keyframes move-back { 0%, 59% { opacity: 0; } 60%, 94% { opacity: 1; } 95%, 100% { opacity: 0; } }
+
+  footer { margin-top: 120px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 28px; padding-bottom: 40px; font-size: 14px; color: var(--muted); }
+  footer a { text-decoration: none; margin-left: 18px; }
+  footer a:first-child { margin-left: 0; }
+
+  @media (max-width: 760px) {
+    header.wrap { padding-top: 40px; }
+    .desktop { padding: 28px 14px 0; border-radius: 20px; }
+    .window { grid-template-columns: 1fr; min-height: 300px; }
+    .sidebar { display: none; }
+    .hero-lights { display: flex !important; }
+    .content { padding: 14px 14px 36px; }
+    .tiles { gap: 22px 8px; }
+    .hero .window { min-height: 300px; }
+    .chat .sidebar, .channel .topic, .channel .faces { display: none; }
+    .channel .pill { margin-left: auto; }
+    .messages { padding: 14px 14px 4px; }
+    .composer { margin: 16px 14px 14px; }
+    section.wrap { padding-top: 88px; }
+    .player { grid-template-columns: 1fr !important; }
+    .player .side { display: none; }
+    .player .m-lights { display: flex; }
+    .player main { min-width: 0; padding: 14px 14px 20px; }
+    .player header { gap: 14px; }
+    .player .cover { width: 76px; height: 76px; }
+    .player header h3 { font-size: 20px; }
+    .pill-btn { padding: 0 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .db table, .pointer, .file, .album .folder::after, .keys span::after { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="ripples" aria-hidden="true"></div>
+<canvas id="ascii" aria-hidden="true"></canvas>
+<nav class="wrap">
+  <a class="brand" href="./"><img src="icon.png?v=2" alt="">KeyNav</a>
+  <a class="nav-link" href="https://buy.polar.sh/polar_cl_EeQnbseQRNTZW8EFdLd1EZZPaN6WUKbxVuW0J0d5gXP">Buy <span class="nav-note">$39</span></a>
+</nav>
+
+<header class="wrap">
+  <h1><span class="title">Use your Mac without a mouse</span><span class="cine" aria-hidden="true"></span></h1>
+  <div class="cine-bar" aria-hidden="true"><span><i></i></span><span><i></i></span><span><i></i></span></div>
+  <p class="lede">Click, scroll, and move the pointer from the keyboard. Try it free for 14&nbsp;days, then keep it for a one-time $39.</p>
+  <a class="download" href="download/KeyNav.dmg">
+    <svg viewBox="0 0 17 20" aria-hidden="true"><path d="M14.2 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9C3.6 4.8 1.9 5.8 1 7.4c-1.9 3.3-.5 8.1 1.4 10.8.9 1.3 2 2.8 3.4 2.7 1.4-.1 1.9-.9 3.5-.9s2.1.9 3.5.9c1.5 0 2.4-1.3 3.3-2.6 1-1.5 1.5-3 1.5-3.1-.1 0-2.9-1.1-2.9-4.6zM11.6 3c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
+    Download for Mac
+  </a>
+  <span class="requirement">macOS 14 or later</span>
+  <div id="keyboard" aria-hidden="true"></div>
+  <button class="sound" type="button" aria-pressed="false" aria-label="Play the keyboard to music">
+    <svg class="speaker" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path class="off" d="M13.5 8l4 4m0-4l-4 4"/><path class="on" d="M13.5 7a4 4 0 0 1 0 6M15.5 5a7 7 0 0 1 0 10"/></svg>
+    <svg class="again" viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9"/><path d="M14.6 2.8v3.7h-3.7"/></svg>
+  </button>
+  <button class="sound mute" type="button" aria-label="Mute the forest" hidden>
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5h3l4-3.5v12l-4-3.5H3z"/><path d="M13.5 7a4 4 0 0 1 0 6M15.5 5a7 7 0 0 1 0 10"/></svg>
+  </button>
+</header>
+
+<section class="wrap carousel" aria-roledescription="carousel">
+  <div class="viewport">
+    <button class="replay" type="button" aria-label="Replay the demo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14.6 2.8v3.7h-3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="track">
+      <div class="slide">
+        <p class="combo" data-keys="command shift space"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>Space</kbd><span>Click Anything</span></p>
+        <div class="desktop teal scene" aria-hidden="true">
+          <div class="window player">
+            <aside class="side">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <small>Albums</small>
+              <div class="album-link on" data-code="SA"><i class="art-altered"></i>Altered State</div>
+              <div class="album-link" data-code="SD"><i class="art-state"></i>State</div>
+              <div class="album-link" data-code="SF"><i class="art-origin"></i>ORIGIN</div>
+              <div class="album-link" data-code="SG"><i class="art-archetype"></i>ARCHETYPE</div>
+              <div class="album-link" data-code="SH"><i class="art-virtue"></i>Virtue</div>
+            </aside>
+            <main>
+              <div class="lights m-lights"><i></i><i></i><i></i></div>
+              <header>
+                <div class="cover art-altered"></div>
+                <div>
+                  <h3>Altered State</h3>
+                  <div class="by">OVERWERK</div>
+                  <div class="meta">Electronic · 2019</div>
+                  <div class="buttons">
+                    <span class="pill-btn" data-code="AS"><svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z"/></svg>Play</span>
+                    <span class="pill-btn soft" data-code="AD">Shuffle</span>
+                    <span class="more" data-code="AF"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg><span class="menu"><span>Add to Library</span><span>Share Album</span><hr><span>Follow me on X<small>@kevisyoung</small></span></span></span>
+                  </div>
+                </div>
+              </header>
+              <div class="songs">
+                <div class="song" data-code="FS"><small>1</small><span>Need (alt)</span><small>5:13</small></div>
+                <div class="song" data-code="FD"><small>2</small><span>Reflect (alt)</span><small>4:59</small></div>
+                <div class="song" data-code="FF"><small>3</small><span>Moments ft. Black Atlass (alt)</span><small>5:18</small></div>
+                <div class="song" data-code="FG"><small>4</small><span>Phase (alt)</span><small>5:14</small></div>
+              </div>
+            </main>
+          </div>
+        </div>
+        <h2>Click stuff</h2>
+        <p>Every button, link, and field gets a shortcut label. Works in apps and browsers!</p>
+      </div>
+      <div class="slide">
+        <p class="combo" data-keys="command shift j" data-mode-keys="tab h j k l"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>J</kbd><span>Scroll Anything</span></p>
+        <div class="desktop scene" aria-hidden="true">
+          <div class="window">
+            <div class="content">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <div class="db-title">Roadmap</div>
+              <div class="db">
+                <table>
+                  <colgroup><col style="width:190px"><col style="width:130px"><col style="width:120px"><col style="width:90px"><col style="width:110px"><col style="width:100px"><col style="width:100px"><col style="width:160px"></colgroup>
+                  <thead><tr><th>Name</th><th>Status</th><th>Owner</th><th>Due</th><th>Priority</th><th>Area</th><th>Estimate</th><th>Sprint</th></tr></thead>
+                  <tbody>
+                    <tr><td>Rework onboarding</td><td><span class="tag done">Done</span></td><td><span class="who"><i style="background:#f4a261"></i>Maya</span></td><td>Oct 2</td><td><span class="tag high">High</span></td><td><span class="tag">Design</span></td><td>3 d</td><td>Sprint 14</td></tr>
+                    <tr><td>Ship scroll mode</td><td><span class="tag doing">In progress</span></td><td><span class="who"><i style="background:#2a9d8f"></i>Leo</span></td><td>Oct 9</td><td><span class="tag high">High</span></td><td><span class="tag">App</span></td><td>5 d</td><td>Sprint 14</td></tr>
+                    <tr><td>Label hints audit</td><td><span class="tag done">Done</span></td><td><span class="who"><i style="background:#e76f51"></i>Ana</span></td><td>Oct 11</td><td><span class="tag med">Medium</span></td><td><span class="tag">Site</span></td><td>1 d</td><td>Sprint 14</td></tr>
+                    <tr><td>Settings cleanup</td><td><span class="tag doing">In progress</span></td><td><span class="who"><i style="background:#f4a261"></i>Maya</span></td><td>Oct 16</td><td><span class="tag med">Medium</span></td><td><span class="tag">App</span></td><td>2 d</td><td>Sprint 15</td></tr>
+                    <tr><td>Homerow parity</td><td><span class="tag ">Not started</span></td><td><span class="who"><i style="background:#8ab17d"></i>Sam</span></td><td>Oct 20</td><td><span class="tag high">High</span></td><td><span class="tag">App</span></td><td>4 d</td><td>Sprint 15</td></tr>
+                    <tr><td>Landing page copy</td><td><span class="tag doing">In progress</span></td><td><span class="who"><i style="background:#e76f51"></i>Ana</span></td><td>Oct 21</td><td><span class="tag med">Medium</span></td><td><span class="tag">Site</span></td><td>1 d</td><td>Sprint 15</td></tr>
+                    <tr><td>Accessibility pass</td><td><span class="tag ">Not started</span></td><td><span class="who"><i style="background:#2a9d8f"></i>Leo</span></td><td>Oct 24</td><td><span class="tag high">High</span></td><td><span class="tag">App</span></td><td>3 d</td><td>Sprint 15</td></tr>
+                    <tr><td>Release notes</td><td><span class="tag ">Not started</span></td><td><span class="who"><i style="background:#8ab17d"></i>Sam</span></td><td>Oct 27</td><td><span class="tag ">Low</span></td><td><span class="tag">Docs</span></td><td>1 d</td><td>Sprint 16</td></tr>
+                    <tr><td>Crash reporting</td><td><span class="tag ">Not started</span></td><td><span class="who"><i style="background:#f4a261"></i>Maya</span></td><td>Oct 30</td><td><span class="tag med">Medium</span></td><td><span class="tag">App</span></td><td>2 d</td><td>Sprint 16</td></tr>
+                    <tr><td>Keyboard layouts</td><td><span class="tag ">Not started</span></td><td><span class="who"><i style="background:#2a9d8f"></i>Leo</span></td><td>Nov 3</td><td><span class="tag ">Low</span></td><td><span class="tag">App</span></td><td>3 d</td><td>Sprint 16</td></tr>
+                    <tr><td>Press kit</td><td><span class="tag ">Not started</span></td><td><span class="who"><i style="background:#e76f51"></i>Ana</span></td><td>Nov 6</td><td><span class="tag ">Low</span></td><td><span class="tag">Site</span></td><td>2 d</td><td>Sprint 16</td></tr>
+                    <tr><td>v1.1 planning</td><td><span class="tag ">Not started</span></td><td><span class="who"><i style="background:#8ab17d"></i>Sam</span></td><td>Nov 10</td><td><span class="tag med">Medium</span></td><td><span class="tag">Docs</span></td><td>1 d</td><td>Sprint 17</td></tr>
+                  </tbody>
+                </table>
+                <i class="dot"></i>
+              </div>
+              <div class="keys scrolling"><span data-k="H" class="h">H</span><i class="gap"></i><span data-k="J" class="j">J</span><span data-k="K" class="k">K</span><i class="gap"></i><span data-k="L" class="l">L</span></div>
+            </div>
+          </div>
+        </div>
+        <h2>Scroll stuff</h2>
+        <p>Enter a dedicated scroll mode to easily control scroll with H&nbsp;J&nbsp;K&nbsp;L, and Tab to the next pane.*</p>
+        <p class="note">*Inspired by Vim.</p>
+      </div>
+      <div class="slide">
+        <p class="combo" data-keys="roption" data-mode-keys="i j k l space"><kbd>Right ⌥</kbd><span>Move the Cursor</span></p>
+        <div class="desktop plum scene" aria-hidden="true">
+          <div class="window">
+            <div class="content">
+              <div class="lights"><i></i><i></i><i></i></div>
+              <div class="field">
+                <div class="file"><img src="hotdog.png" alt="" width="96" height="72">Photo.png</div>
+                <div class="album"><div class="folder"><svg viewBox="0 0 64 50"><path d="M4 8a4 4 0 0 1 4-4h14l6 6h28a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="#5aa9f5"/><path d="M4 16h56v26a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="#79bcfa"/></svg></div>Album</div>
+                <svg class="pointer" viewBox="0 0 16 24"><path d="M1 1 L1 19 L5.5 15 L8.5 22 L11.5 20.6 L8.6 13.8 L14.5 13.8 Z" fill="#111" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                <svg class="pointer grab" viewBox="0 0 20 20"><path d="M5 8.5c0-1 .8-1.6 1.6-1.4.2-.9 1-1.4 1.8-1.2.3-.8 1.1-1.2 1.9-.9.4-.6 1.2-.8 1.9-.4.7.3 1 1 1 1.7v4.2c0 2.8-2.2 5-5 5h-.6c-1.6 0-3-.9-3.7-2.3L3 11.6c-.4-.8 0-1.7.8-2 .5-.2 1-.1 1.2.2z" fill="#fff" stroke="#111" stroke-width="1.1" stroke-linejoin="round"/><path d="M7.4 7.3v2.2M9.3 6v3.3M11.2 5.2v4.1" stroke="#111" stroke-width="1" stroke-linecap="round"/></svg>
+              </div>
+              <div class="keys moving">
+                <div class="cluster">
+                  <span data-k="I" class="i">I</span>
+                  <span data-k="J" class="j">J</span><span data-k="K" class="k">K</span><span data-k="L" class="l">L</span>
+                  <span data-k="Space" class="space">Space</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <h2>Move the cursor, not your hand!</h2>
+        <p>Move and click the cursor with I&nbsp;J&nbsp;K&nbsp;L and Space.</p>
+      </div>
+    </div>
+  </div>
+  <div class="pills" role="tablist">
+    <button role="tab" aria-label="Clicking"><i></i></button>
+    <button role="tab" aria-label="Scrolling"><i></i></button>
+    <button role="tab" aria-label="Moving"><i></i></button>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>KeyNav never records your screen or what you type, and works offline.</span>
+    <span><a href="terms.html">Terms &amp; Privacy</a><a href="https://buy.polar.sh/polar_cl_EeQnbseQRNTZW8EFdLd1EZZPaN6WUKbxVuW0J0d5gXP">Buy KeyNav</a></span>
+  </div>
+</footer>
+
+<script>
+  // Each demo window is a small controller. The page's wave reveals its labels control by control as it passes
+  // (keyboard.js calls reveal); once the wave has gone by, run() types the target label and clicks it.
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  // Every wave, the page's or a slide's own sweep, gets a number; newer waves win.
+  let waves = 0;
+  window.keynavWave = () => ++waves;
+  function makeDemo(root, target) {
+    const items = [...root.querySelectorAll("[data-code]")].map(el => {
+      const label = document.createElement("span");
+      label.className = "label";
+      el.appendChild(label);
+      return { el, label, code: el.dataset.code };
+    });
+    const goal = items.find(i => i.code === target);
+    let busy = false;
+    // Bumped to stop a run in progress at its next step.
+    let generation = 0;
+    // The newest wave to reach this window; only its run types and clicks.
+    let latest = 0;
+    // A newer wave reached the window mid-run: the run still lands its click, then makes way for the wave.
+    let queued = false, wake = null;
+    const passed = new Set();
+    const clear = () => items.forEach(i => { i.el.classList.remove("hit"); i.label.classList.remove("done"); i.label.style.visibility = "hidden"; });
+    const cancel = () => {
+      if (!busy) return;
+      generation++;
+      busy = false;
+      queued = false;
+      passed.clear();
+      items.forEach(i => { i.el.classList.remove("hit"); i.label.classList.remove("done"); i.label.innerHTML = i.code; });
+    };
+    const show = item => {
+      item.el.classList.remove("hit");
+      item.label.innerHTML = item.code;
+      if (item.label.style.visibility === "visible") return;
+      item.label.style.visibility = "visible";
+      item.label.classList.remove("pop");
+      void item.label.offsetWidth;
+      item.label.classList.add("pop");
+    };
+    const demo = {
+      root, items,
+      // Showing on screen now: not on a carousel slide that is out of view.
+      active() {
+        const slide = root.closest(".slide");
+        return !slide || slide.classList.contains("current");
+      },
+      // The wave reached this control. A label already up stays put. During a run the wave is held back
+      // until the click has landed, then the labels it passed come up at once.
+      reveal(item, wave = 0) {
+        // A wave from before the last reset is stale.
+        if (wave && wave < latest) return;
+        if (wave > latest) latest = wave;
+        if (busy) {
+          if (wave === latest && wave > 0) { queued = true; passed.add(item); wake?.(); }
+          return;
+        }
+        show(item);
+      },
+      async run(wave = 0) {
+        if (wave !== latest || !demo.active()) return;
+        if (busy) { queued = true; return; }
+        busy = true;
+        const mine = ++generation;
+        const step = async ms => { await wait(ms); return mine === generation; };
+        if (!(await step(500))) return;
+        // First letter: every label that starts with it stays, the rest drop away.
+        items.forEach(i => {
+          const match = i.code.startsWith(target[0]) && i.label.style.visibility === "visible";
+          i.label.style.visibility = match ? "visible" : "hidden";
+          if (match) i.label.innerHTML = `<b>${target[0]}</b>${i.code.slice(1)}`;
+        });
+        if (!(await step(700))) return;
+        // The second letter completes the label: it turns green with a check, so the eye lands on it.
+        items.forEach(i => { if (i !== goal) i.label.style.visibility = "hidden"; });
+        goal.label.innerHTML = `${target} ✓`;
+        goal.label.style.visibility = "visible";
+        goal.label.classList.add("done");
+        // The click lands with the check, not after it.
+        goal.el.classList.add("hit");
+        if (!(await step(650))) return;
+        goal.label.classList.remove("done");
+        goal.label.style.visibility = "hidden";
+        // Let the result be seen for a second, then hold up to 600 ms more unless a wave is waiting.
+        if (!(await step(1000))) return;
+        if (!queued) await Promise.race([wait(600), new Promise(r => { wake = r; })]);
+        wake = null;
+        if (mine !== generation) return;
+        clear();
+        busy = false;
+        if (!queued) return;
+        // Catch up with the wave that arrived meanwhile, then let it type and click.
+        queued = false;
+        passed.forEach(show);
+        passed.clear();
+        const next = latest;
+        await wait(700);
+        demo.run(next);
+      },
+      // Off screen: stop any run and take the labels down, ready for the next wave.
+      reset() {
+        latest = window.keynavWave();
+        cancel();
+        clear();
+      },
+    };
+    if (reduce) items.forEach(i => demo.reveal(i));
+    return demo;
+  }
+  window.keynavDemos = [makeDemo(document.querySelector(".slide .desktop"), "AF")];
+
+  // A tiny keyboard beside each shortcut, with the keys it uses filled in and, lighter, the keys the mode then uses.
+  const layout = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,2],
+    [[1.5,"tab"],1,1,1,1,1,1,1,[1,"i"],1,1,1,1,1.5],
+    [1.75,1,1,1,1,1,[1,"h"],[1,"j"],[1,"k"],[1,"l"],1,1,2.25],
+    [[2.25,"shift"],1,1,1,1,1,1,1,1,1,1,2.75],
+    [1.25,1.25,1.25,[1.25,"command"],[6.25,"space"],1.25,[1.25,"roption"],1.25],
+  ];
+  document.querySelectorAll(".combo[data-keys]").forEach(combo => {
+    const on = combo.dataset.keys.split(" ");
+    const mode = (combo.dataset.modeKeys || "").split(" ");
+    let rects = "";
+    layout.forEach((row, r) => {
+      let x = 0;
+      row.forEach(key => {
+        const [w, name] = Array.isArray(key) ? key : [key];
+        rects += `<rect x="${x + 0.12}" y="${r + 0.12}" width="${w - 0.24}" height="0.76" rx="0.2"${on.includes(name) ? ' class="on"' : mode.includes(name) ? ' class="mode"' : ""}/>`;
+        x += w;
+      });
+    });
+    combo.insertAdjacentHTML("afterbegin", `<svg viewBox="0 0 15 5" aria-hidden="true">${rects}</svg>`);
+  });
+
+  // The carousel is the demo. Each slide starts with its mode's shortcut on the keyboard behind the title
+  // (keyboard.js plays it); each shortcut sends a wave, and the other demos start once their keys
+  // are down. A pill jumps to its slide; the replay button plays the one showing again.
+  const modes = [
+    { keys: ["command", "shift", "space"], ripple: true, labels: true, start: 0, time: 7000 },
+    { keys: ["command", "shift", "j"], ripple: true, start: 1000, time: 8000 },
+    { keys: ["roption"], tap: true, ripple: true, start: 700, time: 5200 },
+  ];
+  const track = document.querySelector(".track");
+  const pills = [...document.querySelectorAll(".pills button")];
+  const slides = [...document.querySelectorAll(".slide")];
+  let current = -1, timer, starting;
+  function go(index) {
+    const changed = (index + pills.length) % pills.length !== current;
+    current = (index + pills.length) % pills.length;
+    const mode = modes[current];
+    track.style.transform = `translateX(-${current * 100}%)`;
+    slides.forEach((slide, i) => slide.classList.toggle("current", i === current));
+    if (changed) document.dispatchEvent(new Event("slidechange"));
+    window.keynavDemos.forEach(d => d.reset());
+    // The demo waits on its first frame until its shortcut is down.
+    clearTimeout(starting);
+    const anims = slides[current].getAnimations({ subtree: true }).filter(anim => !anim.animationName?.startsWith("label"));
+    anims.forEach(anim => { anim.pause(); anim.currentTime = 0; });
+    starting = setTimeout(() => anims.forEach(anim => anim.play()), reduce ? 0 : mode.start);
+    window.keynavShortcut = { ...mode, at: performance.now() };
+    document.dispatchEvent(new CustomEvent("shortcut", { detail: window.keynavShortcut }));
+    pills.forEach((p, i) => {
+      p.classList.toggle("active", i === current);
+      p.setAttribute("aria-selected", i === current);
+      p.style.setProperty("--slide-time", `${mode.time}ms`);
+      const fill = p.querySelector("i");
+      fill.style.animation = "none"; void fill.offsetWidth; fill.style.animation = "";
+    });
+    clearTimeout(timer);
+    if (!reduce) timer = setTimeout(() => go(current + 1), mode.time);
+  }
+  // keyboard.js holds the carousel while it plays the keyboard to music.
+  window.keynavCarousel = {
+    pause() { clearTimeout(timer); pills.forEach(p => p.querySelector("i").style.animationPlayState = "paused"); },
+    resume() { go(current + 1); },
+    // Shows a slide's shortcut without playing it or starting its demo.
+    show(index) {
+      current = index;
+      track.style.transform = `translateX(-${current * 100}%)`;
+      slides.forEach((slide, i) => slide.classList.toggle("current", i === current));
+    },
+  };
+  pills.forEach((p, i) => p.addEventListener("click", () => go(i)));
+  document.querySelector(".replay")?.addEventListener("click", () => go(current));
+  go(0);
+</script>
+<script>
+  // Counts the visit in keynav.app's own log, without cookies (worker/index.js), and the Buy clicks.
+  (() => {
+    const q = new URLSearchParams(location.search);
+    const hit = k => navigator.sendBeacon?.("/api/hit", JSON.stringify({ k, p: location.pathname, r: document.referrer, s: q.get("utm_source") || q.get("ref") || "" }));
+    window.keynavHit = hit;
+    hit("view");
+    document.addEventListener("click", e => { if (e.target.closest?.('a[href*="buy.polar.sh"]')) hit("buy"); });
+  })();
+</script>
+<script type="module" src="keyboard.js?v=70"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+// The website on Cloudflare Workers: static assets (scripts/deploy_site.sh fills build/site), with worker/index.js in
+// front of the paths it logs and of /admin. ADMIN_PASSWORD is a secret: npx wrangler@4 secret put ADMIN_PASSWORD
+{
+  "name": "keynav",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "build/site",
+    "binding": "ASSETS",
+    "run_worker_first": ["/", "/admin", "/admin/*", "/api/*", "/download/*", "/appcast.xml"]
+  },
+  "d1_databases": [
+    { "binding": "STATS", "database_name": "keynav-stats", "database_id": "f2bda05f-490d-4ac5-bab9-9b064f14286e" }
+  ],
+  "routes": [
+    { "pattern": "keynav.app", "custom_domain": true },
+    { "pattern": "www.keynav.app", "custom_domain": true }
+  ]
+}

@@ -1,0 +1,13 @@
+.build/
+build/
+*.xcodeproj/
+DerivedData/
+.DS_Store
+dist/
+.claude/
+.wrangler/
+.dev.vars
+# Licensed media for the website, kept out of the public repo; deploy_site.sh still copies them from here.
+site/drop.m4a
+site/typeractive.glb
+site/parked/

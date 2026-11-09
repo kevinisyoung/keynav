@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KeyNav Terms &amp; Privacy</title>
+<link rel="canonical" href="https://keynav.app/terms.html">
+<meta name="description" content="KeyNav's license terms and privacy policy.">
+<link rel="icon" href="icon.png?v=2">
+<style>
+  :root { --bg: #fafaf9; --text: #141416; --muted: #66666e; --line: rgba(0, 0, 0, 0.08); }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e0e10; --text: #f3f3f5; --muted: #9a9aa4; --line: rgba(255, 255, 255, 0.09); }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 0 24px; }
+  nav { display: flex; align-items: center; height: 72px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; }
+  .brand img { width: 30px; height: 30px; }
+  h1 { font-size: 40px; line-height: 1.1; letter-spacing: -0.03em; margin: 48px 0 8px; }
+  h2 { font-size: 21px; letter-spacing: -0.01em; margin: 40px 0 8px; }
+  p, li { color: var(--muted); }
+  ul { padding-left: 20px; }
+  .updated { margin: 0 0 8px; font-size: 15px; }
+  footer { margin-top: 80px; border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><a class="brand" href="./"><img src="icon.png?v=2" alt="">KeyNav</a></nav>
+
+  <h1>Terms &amp; Privacy</h1>
+  <p class="updated">Last updated November 9, 2026</p>
+
+  <h2>Privacy</h2>
+  <p>KeyNav runs entirely on your Mac. It reads the keyboard and the buttons on screen only to show its labels and move the pointer, and it never records, stores, or sends what you type or what is on your screen.</p>
+  <p>KeyNav goes online for two things. Once a day it asks keynav.app whether there's a newer version, sending only its version number, and you can turn this off in Settings. When you activate or deactivate a license, it sends your license key and your Mac's name to Polar, which sells KeyNav. Otherwise it works without an internet connection.</p>
+  <p>This website counts its visits and downloads without cookies. It keeps the site that sent you, your country and your kind of device, but never your IP address or anything that could follow you from one day to the next.</p>
+  <p>When you buy KeyNav, Polar handles the payment and your email address as the merchant of record, under <a href="https://polar.sh/legal/privacy">its own privacy policy</a>. We never see your card details.</p>
+
+  <h2>Free trial</h2>
+  <p>You can use every part of KeyNav free for 14 days. After that, Clicking, Scrolling, and Moving stop until you activate a license.</p>
+
+  <h2>Your license</h2>
+  <ul>
+    <li>A license costs $39, paid once, and includes every future update.</li>
+    <li>It is for one person, who may activate it on up to three of their own Macs and move it between them from Settings.</li>
+    <li>You may not resell, share, or redistribute KeyNav or your license key. Its source code is published under its own license, which lets you build KeyNav for your own use.</li>
+  </ul>
+
+  <h2>Refunds</h2>
+  <p>If KeyNav doesn't work for you, reply to your receipt email within 30 days of buying it for a full refund.</p>
+
+  <h2>No warranty</h2>
+  <p>KeyNav is provided as is, without warranty of any kind. To the extent the law allows, we are not liable for any damages that come from using it.</p>
+
+  <footer>Questions? Reply to your receipt email, or <a href="./">go back to KeyNav</a>.</footer>
+</div>
+<script>
+  // Counts the visit in keynav.app's own log, without cookies (worker/index.js).
+  navigator.sendBeacon?.("/api/hit", JSON.stringify({ k: "view", p: location.pathname, r: document.referrer }));
+</script>
+</body>
+</html>
