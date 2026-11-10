@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="${VERSION:-0.2.8}"
+VERSION="${VERSION:-0.2.9}"
 # The commit count, plus the 84 commits from before the source went public, so builds keep counting up for Sparkle.
 BUILD_NUMBER="${BUILD_NUMBER:-$(( $(git rev-list --count HEAD 2>/dev/null || echo 1) + 84 ))}"
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"

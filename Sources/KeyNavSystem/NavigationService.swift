@@ -365,6 +365,8 @@ public final class NavigationService {
             parkTask?.cancel()
             parkTask = nil
             scrollOutline.hide()
+            // The next Scroll draws its outline afresh, even over the same pane.
+            lastOutline = (nil, nil)
             dot.hide()
             if mode == .scroll, let home = scrollHome, let parked = scrollParked {
                 pendingScrollReturn = (home, parked)
@@ -407,11 +409,13 @@ public final class NavigationService {
                                                                  clickChain: quick.clickChain, focusChain: quick.focusChain,
                                                                  areas: quick.areas, resume: resume),
                                               at: self.now, pointer: self.pointer).effects)
-                // Whether or not the pointer moved, the dot now marks where scrolling goes.
+                // Whether or not the pointer moved, the dot now marks where scrolling goes. A pointer being parked
+                // shows the outline when it lands; one that stays put shows it now, with the panes found last time.
                 if self.router.mode == .scroll, self.parkTask == nil {
                     let location = self.output.location()
                     self.scrollParked = location
                     self.dot.show(atGlobal: location)
+                    self.showScrollOutline(force: true)
                 }
                 let areas = await AccessibilityTargets.scrollAreas(pid: pid, afterWaking: quick.treeWasAsleep)
                 guard !Task.isCancelled, self.router.generation == generation else { return }
@@ -468,12 +472,15 @@ public final class NavigationService {
     /// Outlines the pane being scrolled and numbers the others; redrawn only when that pane changes.
     private func showScrollOutline(force: Bool = false, fade: Bool = false) {
         guard let session = router.scroll else { return }
-        let shown = (session.outlined, session.areaIndex)
+        // Outside every pane scrolling goes to the window itself (and some apps, like Claude's, show no panes until
+        // they've scrolled), so the whole window is outlined: there's always a border saying where keys go.
+        let current = session.outlined ?? (session.areaIndex == nil ? session.window : nil)
+        let shown = (current, session.areaIndex)
         guard force || shown.0 != lastOutline.0 || shown.1 != lastOutline.1 else { return }
         lastOutline = shown
         let rect = { (f: HintTarget.Frame) in CGRect(x: f.x, y: f.y, width: f.width, height: f.height) }
-        scrollOutline.show(current: session.outlined.map(rect), areas: session.areas.map(rect), currentIndex: session.areaIndex,
-                           fade: fade)
+        scrollOutline.show(current: current.map(rect), areas: session.areas.map(rect), currentIndex: session.areaIndex,
+                           coversWindow: session.outlined == nil, fade: fade)
     }
 
     /// Registers each mode's shortcut with the system while Secure Input is on and nothing is running. Moving's

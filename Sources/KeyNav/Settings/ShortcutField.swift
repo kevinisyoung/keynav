@@ -16,14 +16,15 @@ enum RecorderKind {
 
     var hint: String {
         switch self {
-        case .entry: return "Tap a single modifier such as Right Option, or press a key with modifiers."
-        case .exit: return "Press the key that should leave the mode. Escape records Escape here."
-        case .action: return "Plain keys work here. Press a modifier alone to bind it as a hold."
+        case .entry: return "Tap a single modifier such as Right Option, or press a key with modifiers. It saves when you let go."
+        case .exit: return "Press the key that should leave the mode. It saves when you let go, and Escape records Escape here."
+        case .action: return "Plain keys work here, and a modifier alone binds as a hold. It saves when you let go."
         }
     }
 }
 
-/// An inline shortcut recorder: shows the current key; click (or press Space) to record, then Save or Cancel.
+/// An inline shortcut recorder: shows the current key; click (or press Space) to record, and it saves as soon as
+/// every key is let go. Escape, or Cancel, stops without saving.
 struct ShortcutField: View {
     let title: String
     let gesture: KNGesture?
@@ -49,10 +50,6 @@ struct ShortcutField: View {
                     recorderPill
                     Button("Cancel") { stopRecording() }
                         .controlSize(.small)
-                    Button("Save") { save() }
-                        .controlSize(.small)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(pending == nil)
                 } else {
                     Button { startRecording() } label: {
                         KeyCaps(text: gesture?.displayName ?? placeholder, placeholder: gesture == nil, large: prominent)
@@ -96,11 +93,13 @@ struct ShortcutField: View {
                             problems = []
                             stopRecording()
                         }
+                        .keyboardShortcut(.cancelAction)
                         if let onReplace, let pending {
                             Button("Replace") {
                                 problems = onReplace(pending)
                                 if problems.isEmpty { stopRecording() }
                             }
+                            .keyboardShortcut(.defaultAction)
                         }
                         Button("Choose another key") {
                             problems = []
@@ -116,7 +115,7 @@ struct ShortcutField: View {
 
     private var recorderPill: some View {
         ZStack {
-            KeyCaptureRepresentable(kind: kind, onGesture: { pending = $0 }, onCancel: { stopRecording() })
+            KeyCaptureRepresentable(kind: kind, onGesture: { pending = $0 }, onRelease: save, onCancel: { stopRecording() })
                 .frame(width: 1, height: 1)
                 .opacity(0.01)
             Text(pending?.displayName ?? "Press keys…")
@@ -143,9 +142,9 @@ struct ShortcutField: View {
         pending = nil
     }
 
-    private func save() {
-        guard let pending else { return }
-        problems = onSave(pending)
+    private func save(_ gesture: KNGesture) {
+        pending = gesture
+        problems = onSave(gesture)
         if problems.isEmpty { stopRecording() } else { recording = false }
     }
 }
@@ -173,6 +172,8 @@ struct KeyCaps: View {
 struct KeyCaptureRepresentable: NSViewRepresentable {
     let kind: RecorderKind
     let onGesture: (KNGesture) -> Void
+    /// Every key is up again after a gesture: it's the one to keep.
+    let onRelease: (KNGesture) -> Void
     let onCancel: () -> Void
 
     func makeNSView(context: Context) -> CaptureView {
@@ -188,14 +189,18 @@ struct KeyCaptureRepresentable: NSViewRepresentable {
     private func update(_ view: CaptureView) {
         view.kind = kind
         view.onGesture = onGesture
+        view.onRelease = onRelease
         view.onCancel = onCancel
     }
 
     final class CaptureView: NSView, SuspendsNavigation {
         var kind: RecorderKind = .action
         var onGesture: ((KNGesture) -> Void)?
+        var onRelease: ((KNGesture) -> Void)?
         var onCancel: (() -> Void)?
         private var modifierCandidate: UInt16?
+        /// The gesture pressed and not yet let go.
+        private var held: KNGesture?
 
         override var acceptsFirstResponder: Bool { true }
 
@@ -221,7 +226,20 @@ struct KeyCaptureRepresentable: NSViewRepresentable {
                 return
             }
             guard !event.isARepeat else { return }
-            onGesture?(.key(code: event.keyCode, modifiers: Self.modifiers(event.modifierFlags)))
+            let gesture = KNGesture.key(code: event.keyCode, modifiers: Self.modifiers(event.modifierFlags))
+            held = gesture
+            onGesture?(gesture)
+        }
+
+        // macOS sends no key-up for a key pressed with Command, so a chord also finishes when its modifiers are let go.
+        override func keyUp(with event: NSEvent) {
+            if Self.modifierCount(event.modifierFlags) == 0 { finish() }
+        }
+
+        private func finish() {
+            guard let gesture = held else { return }
+            held = nil
+            onRelease?(gesture)
         }
 
         override func flagsChanged(with event: NSEvent) {
@@ -231,10 +249,11 @@ struct KeyCaptureRepresentable: NSViewRepresentable {
                 modifierCandidate = Self.modifierCount(event.modifierFlags) == 1 ? code : nil
             } else if modifierCandidate == code {
                 modifierCandidate = nil
-                switch kind {
-                case .entry: onGesture?(.modifierTap(code: code))
-                case .action, .exit: onGesture?(.key(code: code, modifiers: []))
-                }
+                held = kind == .entry ? .modifierTap(code: code) : .key(code: code, modifiers: [])
+                onGesture?(held!)
+                finish()
+            } else if Self.modifierCount(event.modifierFlags) == 0 {
+                finish()
             }
         }
 

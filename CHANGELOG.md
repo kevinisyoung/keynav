@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.9 — 2026-11-10
+
+- Shortcuts in Settings save as soon as you let go of the keys, so there's no Save button to click, and a key that's already taken can be replaced with Return.
+- Scrolling outlines its panes reliably in Claude and other web apps with a preview pane, and always shows a border, around the whole window when there's no pane.
+
 ## 0.2.8 — 2026-11-04
 
 - Starting Scrolling while KeyNav's own Settings window is in front no longer freezes KeyNav.

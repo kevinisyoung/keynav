@@ -252,7 +252,9 @@ public enum AccessibilityTargets {
             let app = AXUIElementCreateApplication(pid)
             AXUIElementSetMessagingTimeout(app, 0.25)
             guard let window = windowOf(app), let windowFrame = frame(of: window) else { return [] }
-            return scrollAreas(in: window, frame: windowFrame)
+            // This read runs after the dot and outline are already up, so it can take longer than the quick one; a
+            // scan cut short by a slow app finds no panes.
+            return scrollAreas(in: window, frame: windowFrame, seconds: 1.5)
         }
         if pid == getpid() { return await MainActor.run { work() } }
         return await Task.detached(priority: .userInitiated) { work() }.value
@@ -323,8 +325,8 @@ public enum AccessibilityTargets {
     }
 
     private static func scrollAreas(in window: AXUIElement, frame windowFrame: HintTarget.Frame,
-                                    maxNodes: Int = 3_000) -> [HintTarget.Frame] {
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.6
+                                    maxNodes: Int = 3_000, seconds: Double = 0.6) -> [HintTarget.Frame] {
+        let deadline = ProcessInfo.processInfo.systemUptime + seconds
         var areas: [HintTarget.Frame] = []
         var candidates: [ScrollCandidate] = []
         /// Pages that scroll as a whole (X, Google): content below the fold is squeezed into slivers at the page's
@@ -345,9 +347,12 @@ public enum AccessibilityTargets {
                 }
                 // Only the bottom edge counts: a pane under a header (Claude's chat) leaves what scrolled up at the
                 // page's top, and screen reader hints hide there too. Text and links count, not the empty layout
-                // groups apps also leave there; X squeezes them to no height at all.
+                // groups apps also leave there; X squeezes them to no height at all. A pane with its own top that
+                // runs to the page's bottom (Claude's file preview) leaves its overflow there too; that's the pane
+                // scrolling, not the page.
                 if let page, rect.height <= 1, rect.width >= 40, abs(rect.y - page.maxY) <= 1,
-                   ["AXStaticText", "AXLink", "AXButton", "AXImage", "AXHeading"].contains(elementRole ?? "") {
+                   ["AXStaticText", "AXLink", "AXButton", "AXImage", "AXHeading"].contains(elementRole ?? ""),
+                   !within.contains(where: { candidates[$0].pane != nil && candidates[$0].top != nil }) {
                     if let index = pageSlivers.firstIndex(where: { $0.page == page }) { pageSlivers[index].count += 1 }
                     else { pageSlivers.append((page, 1)) }
                 }

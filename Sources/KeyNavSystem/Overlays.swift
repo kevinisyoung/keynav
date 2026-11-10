@@ -609,11 +609,12 @@ final class ScrollOutline {
     private var panels: [OverlayPanel] = []
 
     /// `areas` are the numbered stops (up to nine); `current` is the pane being scrolled, which may be one of them.
-    /// `fade` eases an outline that moved in at its new place, so a correction doesn't jump.
-    func show(current: CGRect?, areas: [CGRect], currentIndex: Int?, fade: Bool = false) {
+    /// `coversWindow` says `current` is the whole window rather than a pane. `fade` eases an outline that moved in at
+    /// its new place, so a correction doesn't jump.
+    func show(current: CGRect?, areas: [CGRect], currentIndex: Int?, coversWindow: Bool = false, fade: Bool = false) {
         var outlines = areas.prefix(9).enumerated().map { (rect: $1, number: $0 + 1, active: $0 == currentIndex) }
         // Another area's number would float over the content being scrolled; those stay hidden (their keys still work).
-        if let current {
+        if let current, !coversWindow {
             outlines.removeAll { !$0.active && current.contains(CGPoint(x: $0.rect.minX + 19, y: $0.rect.minY + 19)) }
         }
         if currentIndex == nil, let current { outlines.append((current, 0, true)) }
