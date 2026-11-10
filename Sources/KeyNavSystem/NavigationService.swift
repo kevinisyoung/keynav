@@ -64,6 +64,9 @@ public final class NavigationService {
     /// The pointer moved while a click key (Space) held the left button, or the person is dragging the mouse.
     @ObservationIgnored private var keyDragMoved = false
     @ObservationIgnored private var mouseDragging = false
+    /// While Moving, the clipboard is watched so the badge can say "Copied" for a moment after anything is copied.
+    @ObservationIgnored private var copyWatch: Timer?
+    @ObservationIgnored private var copiedUntil = 0.0
     /// Set when Scroll mode stops; the pointer goes home only if no other mode starts in the same step.
     @ObservationIgnored private var pendingScrollReturn: (home: CGPoint, parked: CGPoint)?
     @ObservationIgnored private var tap: EventTap?
@@ -730,6 +733,7 @@ public final class NavigationService {
 
     private func refreshOverlays() {
         let appearance = config.appearance
+        watchCopies(router.mode == .cursor)
         switch router.mode {
         case .off:
             badge.hide()
@@ -751,7 +755,7 @@ public final class NavigationService {
             if router.cursor.held.contains(.boost) { details.append("Boost") }
             if !clickKeyHoldsLeft { keyDragMoved = false }
             if isDragging { details.append("Dragging") }
-            overlayModel.badgeTitle = "Moving"
+            overlayModel.badgeTitle = now < copiedUntil ? "Copied" : "Moving"
             overlayModel.badgeDetail = details.isEmpty ? nil : details.joined(separator: " · ")
             overlayModel.badgeDragging = isDragging
             overlayModel.badgeScale = appearance.badgeSize.scale
@@ -805,6 +809,29 @@ public final class NavigationService {
             if let screen = ScreenSpace.screen(containingGlobal: anchor) {
                 let size = hud.size
                 hud.show(at: NSPoint(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.maxY - size.height - 12))
+            }
+        }
+    }
+
+    private func watchCopies(_ on: Bool) {
+        guard on != (copyWatch != nil) else { return }
+        copyWatch?.invalidate()
+        copyWatch = nil
+        copiedUntil = 0
+        guard on else { return }
+        var seen = NSPasteboard.general.changeCount
+        copyWatch = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let count = NSPasteboard.general.changeCount
+                if count != seen {
+                    seen = count
+                    self.copiedUntil = self.now + 1.2
+                    self.refreshOverlays()
+                } else if self.copiedUntil > 0, self.now >= self.copiedUntil {
+                    self.copiedUntil = 0
+                    self.refreshOverlays()
+                }
             }
         }
     }
