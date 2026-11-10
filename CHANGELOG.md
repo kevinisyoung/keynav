@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.10 — 2026-11-10
+
+- While Moving, the badge by the pointer says Copied for a moment after you copy something.
+
 ## 0.2.9 — 2026-11-10
 
 - Shortcuts in Settings save as soon as you let go of the keys, so there's no Save button to click, and a key that's already taken can be replaced with Return.
