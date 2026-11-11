@@ -39,6 +39,7 @@ let sharpen = () => {};
 let typeKey = () => {};
 let sweepIn = () => {};
 let clearKeys = () => {};
+let dimKeys = () => {};
 let edges = null;
 
 if (renderer) {
@@ -222,7 +223,7 @@ if (renderer) {
       });
       keys.push({
         name, material, legend: top.material, own: material.color.clone(), parts: [k.cap, ...under].filter(Boolean),
-        text, press: 0, target: 0, lit: 0, bump: 0, flash: 0,
+        text, press: 0, target: 0, lit: 0, dim: false, bump: 0, flash: 0,
       });
     });
     applyTheme();
@@ -285,7 +286,7 @@ if (renderer) {
   pressKeys = (names, down = true) => keys.forEach(k => {
     if (!names.includes(k.name)) return;
     k.target = down ? 1 : 0;
-    if (down) k.lit = 1;
+    if (down) { k.lit = 1; k.dim = false; }
   });
   // The key printed with a letter, or "space", taps and flashes: blue, or red for the demos' presses.
   typeKey = (letter, red = false) => {
@@ -296,11 +297,13 @@ if (renderer) {
   let sweep = null;
   sweepIn = seconds => { sweep = seconds ? { start: performance.now(), length: seconds * 1000 } : null; };
   clearKeys = () => keys.forEach(k => { k.target = 0; k.lit = 0; });
+  // The shortcut's blue fades out, so the demo's red presses stand alone.
+  dimKeys = () => keys.forEach(k => { if (k.lit) k.dim = true; });
 
   // Full rate while keys move; otherwise the slow bob only needs 30 frames a second.
   function frame(now) {
     requestAnimationFrame(frame);
-    const busy = sweep || keys.some(k => Math.abs(k.target - k.press) > 0.001 || k.bump > 0 || k.flash > 0);
+    const busy = sweep || keys.some(k => Math.abs(k.target - k.press) > 0.001 || k.bump > 0 || k.flash > 0 || (k.dim && k.lit > 0));
     if (!busy && now - last < 32) return;
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
@@ -308,9 +311,10 @@ if (renderer) {
       k.press += (k.target - k.press) * Math.min(1, dt * (k.target ? 28 : 10));
       k.bump = Math.max(0, k.bump - dt * 7);
       k.flash = Math.max(0, k.flash - dt * 3);
+      if (k.dim) k.lit = Math.max(0, k.lit - dt * 5);
       const down = Math.max(k.press, Math.sin(k.bump * Math.PI) * 0.8);
       k.parts.forEach(p => p.position.copy(p.userData.rest).addScaledVector(p.userData.down, travel * down));
-      // A shortcut key stays blue once pressed, until the next shortcut.
+      // A shortcut key stays blue once pressed, until its demo starts.
       // Shortcut keys light blue; keys the demos type flash red.
       const blue = Math.max(k.press, k.lit, k.red ? 0 : k.flash);
       const red = k.red ? k.flash : 0;
@@ -411,16 +415,15 @@ function score() {
     const t = drop + mode * 8 * beat;
     // Its shortcut hint appears with it, the hint's keys going down with the board's.
     const combo = combos[mode];
-    list.push({ t, run: () => {
+    // Scroll and Move come in on the song's dings, a little ahead of their beats.
+    list.push({ t: t - [0, 0.314, 0.15][mode], run: () => {
       clearKeys(); pressKeys(keys);
       name(mode);
       window.keynavCarousel?.show(mode);
       combos.forEach(c => c.classList.toggle("shown", c === combo));
       combo.querySelectorAll("kbd").forEach(k => k.classList.add("down"));
-      if (edges && mode === 0) ripple(edges(), "visible");
+      if (edges) ripple(edges(), mode === 0 ? "visible" : false);
     } });
-    // Scroll's and Move's waves go out on the song's dings, a little ahead of the beat.
-    if (mode > 0) list.push({ t: t - [0, 0.314, 0.15][mode], run: () => edges && ripple(edges(), false) });
     list.push({ t: t + 1.5 * beat, run: () => {
       pressKeys(keys, false);
       combo.querySelectorAll("kbd").forEach(k => k.classList.remove("down"));
@@ -428,11 +431,15 @@ function score() {
   });
   // Each mode then shows what it does, on the beat.
   const at = (t, run) => list.push({ t, run });
+  // Just before each demo's first red press, the shortcut's blue fades away.
+  [3.5, 9.5, 17].forEach(b => at(drop + b * beat, dimKeys));
   // Click: the board types Download's label, and Download is pressed.
   const download = document.querySelector(".download");
-  at(drop + 4 * beat, () => { typeKey("D", true); labelOf(download)?.classList.add("typed"); });
-  at(drop + 4.5 * beat, () => { typeKey("F", true); download.classList.add("pressed"); });
-  at(drop + 5.5 * beat, () => download.classList.remove("pressed"));
+  // They land a hair after the beat, which is where it sounds.
+  const late = 0.04;
+  at(drop + 4 * beat + late, () => { typeKey("D", true); labelOf(download)?.classList.add("typed"); });
+  at(drop + 4.5 * beat + late, () => { typeKey("F", true); download.classList.add("pressed"); });
+  at(drop + 5.5 * beat + late, () => download.classList.remove("pressed"));
   // Scroll: a small window opens over the board, KeyNav outlines its list, and J and K scroll it down and up.
   at(drop + 8.5 * beat, () => windowed(true));
   at(drop + 9 * beat, () => inbox.classList.add("outlined"));
