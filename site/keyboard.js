@@ -372,7 +372,7 @@ function name(mode) {
   const showing = cine.classList.contains("on");
   cine.classList.remove("on");
   // The old name fades out before the new one fades in.
-  setTimeout(() => { cine.textContent = phrases[mode]; cine.classList.add("on"); }, showing ? 250 : 0);
+  setTimeout(() => { cine.classList.remove("quote"); cine.textContent = phrases[mode]; cine.classList.add("on"); }, showing ? 250 : 0);
   bars.forEach((bar, i) => {
     bar.classList.toggle("done", i < mode);
     bar.classList.remove("active");
@@ -381,9 +381,15 @@ function name(mode) {
     bar.style.setProperty("--t", `${8 * beat}s`);
   });
 }
+// The voice's line in the build-up.
+function say() {
+  cine.innerHTML = "<span class=\"by\">Your Homerow:</span>“Keep your hands where I can see them”";
+  cine.classList.add("quote", "on");
+  title.classList.add("naming");
+}
 function unname() {
   title.classList.remove("naming");
-  cine.classList.remove("on");
+  cine.classList.remove("on", "quote");
   bars.forEach(bar => bar.classList.remove("done", "active"));
 }
 
@@ -395,6 +401,8 @@ let context, forest, forestGain, forestSource;
 function score() {
   const list = [];
   // The bar before the drop rolls along the home row in sixteenths, while the board sweeps in.
+  // The quote appears as the voice starts, 0.3 s in.
+  list.push({ t: 0.3, run: say });
   [..."ASDFJKL;;LKJFDSA"].forEach((letter, i) => list.push({ t: drop - 4 * beat + i * beat / 4, run: () => typeKey(letter) }));
 
   // From the drop, each mode gets two bars: its shortcut goes down once and sends its wave, and its name lights
@@ -409,8 +417,10 @@ function score() {
       window.keynavCarousel?.show(mode);
       combos.forEach(c => c.classList.toggle("shown", c === combo));
       combo.querySelectorAll("kbd").forEach(k => k.classList.add("down"));
-      if (edges) ripple(edges(), mode === 0 ? "visible" : false);
+      if (edges && mode === 0) ripple(edges(), "visible");
     } });
+    // Scroll's and Move's waves go out on the song's dings, a little ahead of the beat.
+    if (mode > 0) list.push({ t: t - [0, 0.314, 0.15][mode], run: () => edges && ripple(edges(), false) });
     list.push({ t: t + 1.5 * beat, run: () => {
       pressKeys(keys, false);
       combo.querySelectorAll("kbd").forEach(k => k.classList.remove("down"));
@@ -522,8 +532,8 @@ function windowed(on) {
     }
     inbox.firstChild.style.transform = "";
     pane.querySelectorAll("p.picked").forEach(p => p.classList.remove("picked"));
-    Object.assign(pane.style, { left: `${(e.left + e.right) / 2}px`, top: `${(e.top + e.bottom) / 2}px` });
     layer.appendChild(pane);
+    Object.assign(pane.style, { left: `${(e.left + e.right) / 2}px`, top: `${(e.top + e.bottom) / 2}px` });
     requestAnimationFrame(() => pane.classList.add("on"));
   } else {
     pane?.classList.remove("on");
@@ -585,7 +595,7 @@ sound?.addEventListener("click", () => {
   if (playing) return stop();
   window.keynavHit?.("play");
   // The clip is mixed quiet in the file itself, since iOS ignores a page setting its volume.
-  audio ??= new Audio("drop.m4a?v=6");
+  audio ??= new Audio("drop.m4a?v=13");
   audio.currentTime = 0;
   hush();
   // The forest begins once the song has faded out; without the forest, it's the end.

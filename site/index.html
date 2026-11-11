@@ -7,6 +7,9 @@
 <meta name="description" content="Keyboard navigation for macOS. Click any button by typing its label, scroll with Vim keys, and move the pointer without touching the mouse. Free for 14 days.">
 <link rel="canonical" href="https://keynav.app/">
 <link rel="icon" href="icon.png?v=2">
+<!-- Geist, cut down to the letters of the music demo's quote. -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@500&text=%E2%80%9CKeep%20your%20hands%20where%20I%20can%20see%20them%E2%80%9D%E2%80%9C&display=swap">
 <script type="importmap">
   { "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -119,6 +122,11 @@
     opacity: 0; transform: translate(-50%, -50%) scale(0.96); transition: opacity 0.35s ease, transform 0.45s ease;
   }
   .demo-window.on { opacity: 1; transform: translate(-50%, -50%); }
+  /* On a phone the board fills the width, so the window is see-through and the keys pressed under it still show. */
+  @media (max-width: 700px) {
+    .demo-window { background: color-mix(in srgb, var(--bg) 45%, transparent); box-shadow: none; }
+    .demo-window p { text-shadow: 0 0 6px var(--bg), 0 0 2px var(--bg); }
+  }
   .demo-window .lights { display: flex; gap: 6px; padding: 0 12px 8px; }
   .demo-window .lights i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
   .demo-window .list { height: 140px; margin: 0 8px 8px; overflow: hidden; border-radius: 8px; outline: 2px solid transparent; transition: outline-color 0.25s ease; }
@@ -178,11 +186,14 @@
   #keyboard canvas { transition: opacity 0.6s ease, filter 0.6s ease; }
   body.music #keyboard canvas { opacity: 1; filter: none; }
   /* From the drop, the headline names the mode playing, with a bar under it like the carousel's. */
-  header h1 { display: grid; align-items: center; }
+  header h1 { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
   header h1 > span { grid-area: 1 / 1; transition: opacity 0.25s ease; }
   header h1 .cine { opacity: 0; }
   header h1.naming .title { opacity: 0; }
   header h1.naming .cine.on { opacity: 1; }
+  /* Before the drop, it shows the voice's line on one line, wider than the headline and smaller so it keeps its height. */
+  header h1 .cine.quote { font: 500 min(0.62em, 5vw)/1.15 Geist, -apple-system, sans-serif; letter-spacing: -0.03em; white-space: nowrap; justify-self: start; position: relative; left: 50%; transform: translateX(-50%); }
+  header h1 .cine.quote .by { display: block; margin-bottom: 10px; font: normal 500 0.48em/1.2 -apple-system, system-ui, sans-serif; letter-spacing: 0; color: var(--muted); white-space: normal; }
   .cine-bar {
     display: flex; justify-content: center; gap: 8px; max-height: 0; margin: 0 auto; overflow: hidden; opacity: 0;
     transition: opacity 0.4s ease, max-height 0.6s ease, margin 0.6s ease;
@@ -924,6 +935,6 @@
     document.addEventListener("click", e => { if (e.target.closest?.('a[href*="buy.polar.sh"]')) hit("buy"); });
   })();
 </script>
-<script type="module" src="keyboard.js?v=70"></script>
+<script type="module" src="keyboard.js?v=81"></script>
 </body>
 </html>
