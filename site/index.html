@@ -114,6 +114,7 @@
   /* The demos while the music plays: a typed label goes blue and its button presses, the scroll area gets
      KeyNav's outline, and a pointer steps across the board and clicks. */
   .hint.typed { background: var(--accent); color: #fff; box-shadow: none; }
+  .hint.typed::before, .hint.typed::after { background: var(--accent); }
   .download { transition: transform 0.12s ease; }
   .download.pressed { transform: scale(0.95); }
   .demo-window {
@@ -204,6 +205,7 @@
   .cine-bar i { display: block; height: 100%; width: 0; background: var(--text); border-radius: 4px; }
   .cine-bar span.done i { width: 100%; }
   .cine-bar span.active i { animation: fill var(--t, 3.7s) linear forwards; }
+  body.away .cine-bar span.active i { animation-play-state: paused; }
   /* With the music on, the hint is just its keys; the headline says what they do. */
   body.music .slide .combo > span { display: none; }
   /* The shortcut hints wait for their shortcut, and its keys go down with the board's. */
@@ -935,6 +937,6 @@
     document.addEventListener("click", e => { if (e.target.closest?.('a[href*="buy.polar.sh"]')) hit("buy"); });
   })();
 </script>
-<script type="module" src="keyboard.js?v=85"></script>
+<script type="module" src="keyboard.js?v=88"></script>
 </body>
 </html>

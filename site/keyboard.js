@@ -499,6 +499,20 @@ function stop() {
   if (music) settle();
 }
 
+// Nothing plays while the tab is out of sight: the song and the forest pause, and pick up where they were on return.
+let away = false;
+document.addEventListener("visibilitychange", () => {
+  document.body.classList.toggle("away", document.hidden);
+  if (document.hidden) {
+    if (playing && !audio.paused) { audio.pause(); away = true; }
+    context?.suspend();
+  } else {
+    if (away && playing) audio.play().catch(stop);
+    away = false;
+    context?.resume();
+  }
+});
+
 // The forest creeps in over eight seconds to a quiet level, so its stream doesn't rush in like a whoosh, or fades
 // out over one and a half. True when it started.
 function woods(on) {
