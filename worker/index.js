@@ -197,13 +197,18 @@ async function dashboard(env, url) {
   const days = [7, 30, 90].includes(Number(url.searchParams.get("d"))) ? Number(url.searchParams.get("d")) : 30;
   const since = new Date(Date.now() - (days - 1) * DAY).toISOString().slice(0, 10);
   const q = (sql, ...args) => env.STATS.prepare(sql).bind(...args);
-  const [daily, totals, refs, countries, devices, versions, installs, recent] = (await env.STATS.batch([
+  const [daily, totals, refs, downloadRefs, countries, devices, versions, installs, recent] = (await env.STATS.batch([
     q(`SELECT day, COUNT(DISTINCT CASE WHEN kind = 'view' THEN visitor END) AS visitors,
               SUM(kind = 'download' AND device = 'Mac') AS downloads FROM events WHERE day >= ? GROUP BY day`, since),
     q(`SELECT SUM(kind = 'view') AS views, SUM(kind = 'download' AND device = 'Mac') AS downloads, SUM(kind = 'buy') AS buys,
               SUM(kind = 'play') AS plays FROM events WHERE day >= ?`, since),
     q(`SELECT COALESCE(source, ref) AS name, COUNT(DISTINCT day || visitor) AS n FROM events
        WHERE day >= ? AND kind = 'view' AND COALESCE(source, ref) IS NOT NULL GROUP BY name ORDER BY n DESC LIMIT 12`, since),
+    // A download comes from keynav.app itself, so it takes the source of that visitor's visit the same day.
+    q(`SELECT COALESCE((SELECT COALESCE(v.source, v.ref) FROM events v
+         WHERE v.kind = 'view' AND v.day = d.day AND v.visitor = d.visitor AND COALESCE(v.source, v.ref) IS NOT NULL
+         ORDER BY v.ts LIMIT 1), 'Direct') AS name, COUNT(*) AS n
+       FROM events d WHERE d.day >= ? AND d.kind = 'download' AND d.device = 'Mac' GROUP BY name ORDER BY n DESC LIMIT 12`, since),
     q(`SELECT country AS name, COUNT(DISTINCT day || visitor) AS n FROM events
        WHERE day >= ? AND kind = 'view' AND country IS NOT NULL GROUP BY name ORDER BY n DESC LIMIT 12`, since),
     q(`SELECT device AS name, COUNT(DISTINCT day || visitor) AS n FROM events
@@ -244,6 +249,7 @@ async function dashboard(env, url) {
     </section>
     <section class="lists">
       ${list("Where visitors come from", refs, (n) => n, "No referrers yet")}
+      ${list("Where Mac downloads come from", downloadRefs, (n) => n, "No Mac downloads yet")}
       ${list("Countries", countries, country)}
       ${list("Devices", devices, (n) => n)}
       ${list("App versions in use", versions, (n) => (n ? `Build ${n}` : "Unknown"), "No update checks today")}
