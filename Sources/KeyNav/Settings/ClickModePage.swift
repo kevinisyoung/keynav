@@ -28,6 +28,9 @@ struct ClickModePage: View {
                 )) {
                     SettingLabel(title: "Label the menu bar and Dock", detail: "Menus, status icons and Dock items get labels too.")
                 }
+                SettingToggle(title: "Show the Report label",
+                              detail: "A ? label in the screen's corner, here and in Scrolling, for telling us when labels or panes look wrong.",
+                              keyPath: \.showReportLabel)
             }
 
             Section {

@@ -32,6 +32,8 @@ public enum NavigationEffect: Equatable, Sendable {
     case findScrollWindow(generation: Int)
     /// Move the pointer into the window in front so scroll events reach it.
     case parkPointer(x: Double, y: Double)
+    /// Send a report about this mode's labels or panes, read from the mode as it is now. The mode stops after.
+    case sendReport(ReportDraft)
 }
 
 public enum RouterInput: Equatable, Sendable {
@@ -84,6 +86,8 @@ public struct NavigationRouter: Sendable {
     public private(set) var entriesAllowedWhileSuspended = false
     /// The Cursor-mode key list overlay. Hidden whenever the mode stops.
     public private(set) var helpVisible = false
+    /// A report about Clicking's labels or Scrolling's panes being written. It has every key until it's sent or cancelled.
+    public private(set) var report: ReportDraft?
 
     private var tapRecognizer: ModifierTapRecognizer
     /// Keys whose key-down was consumed. Their key-up and repeats are consumed too, even after the mode ended.
@@ -274,6 +278,24 @@ public struct NavigationRouter: Sendable {
             return RouterDecision(consumed: false, effects: effects)
         }
 
+        // A report being written takes every key until it's sent or cancelled; Escape cancels it and leaves the mode. Command and
+        // Control chords still reach the system, so a screenshot can be taken of what looks wrong.
+        if var draft = report, !event.isModifierKey, event.modifiers.isDisjoint(with: [.command, .control]) {
+            guard event.kind == .down else { return RouterDecision(consumed: true, effects: []) }
+            consumedKeys.insert(event.code)
+            switch draft.handle(event, labels: click?.labels ?? []) {
+            case .consumed:
+                report = draft
+                return RouterDecision(consumed: true, effects: [.refreshOverlay])
+            case .cancel:
+                report = nil
+                return RouterDecision(consumed: true, effects: stop() + [.refreshOverlay])
+            case .send:
+                report = nil
+                return RouterDecision(consumed: true, effects: [.sendReport(draft), .refreshOverlay])
+            }
+        }
+
         if event.kind == .down {
             // The active mode's root exit comes before anything that could compete with it.
             if mode != .off, rootExitMatches(event) {
@@ -324,6 +346,10 @@ public struct NavigationRouter: Sendable {
             return (result.consumed, effects)
 
         case .scroll:
+            if ReportDraft.opens(event) {
+                report = ReportDraft(mode: .scroll)
+                return (true, [.refreshOverlay])
+            }
             guard var session = scroll else { return (false, []) }
             let result = event.kind == .down ? session.keyDown(event) : session.keyUp(event)
             scroll = session
@@ -333,6 +359,13 @@ public struct NavigationRouter: Sendable {
 
         case .click:
             guard event.kind == .down, var session = click else { return (false, []) }
+            if ReportDraft.opens(event), session.substate == .labels, session.hasSnapshot {
+                session.clearTypedLabel()
+                click = session
+                typedLabelAt = nil
+                report = ReportDraft(mode: .click)
+                return (true, [.refreshOverlay])
+            }
             if let deadline = typedLabelDeadline, time >= deadline {
                 session.clearTypedLabel()
             }
@@ -405,6 +438,7 @@ public struct NavigationRouter: Sendable {
         generation += 1
         click = nil
         scroll = nil
+        report = nil
         helpVisible = false
         effects.append(.stopped(previous))
         return effects

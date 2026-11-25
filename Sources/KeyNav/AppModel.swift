@@ -1,3 +1,4 @@
+import CryptoKit
 import AppKit
 import KeyNavCore
 import KeyNavSystem
@@ -60,6 +61,13 @@ final class AppModel {
         navigation.mayStart = { [licensing] in
             licensing.refresh()
             return licensing.status.allowsUse
+        }
+        // A report from a licensed copy names its license by a hash of the key and Polar's activation ID, never the
+        // key itself, so the buyer can be told when what they reported is fixed.
+        navigation.reportLicense = { [licensing] in
+            guard let license = licensing.license else { return nil }
+            let hash = SHA256.hash(data: Data(license.key.utf8)).map { String(format: "%02x", $0) }.joined()
+            return ["keyHash": hash, "activation": license.instanceID]
         }
     }
 

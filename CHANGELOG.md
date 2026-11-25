@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.11 — 2026-11-25
+
+- While Clicking or Scrolling, type ? to report labels or panes that look wrong. Say what went wrong in a few words and press Return; KeyNav sends where its labels and panes were, never a screenshot.
+
 ## 0.2.10 — 2026-11-10
 
 - While Moving, the badge by the pointer says Copied for a moment after you copy something.

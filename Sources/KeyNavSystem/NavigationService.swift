@@ -56,6 +56,14 @@ public final class NavigationService {
     @ObservationIgnored private lazy var badge = HostedOverlay(BadgeView(model: overlayModel))
     @ObservationIgnored private lazy var hud = HostedOverlay(ClickHUDView(model: overlayModel))
     @ObservationIgnored private lazy var help = HostedOverlay(HelpView(model: overlayModel))
+    @ObservationIgnored private lazy var reportChip = HostedOverlay(ReportChipView(model: overlayModel))
+    @ObservationIgnored private lazy var reportPanel = HostedOverlay(ReportView(model: overlayModel))
+    /// The focused window as Clicking last read it, for the Report label's corner.
+    @ObservationIgnored private var clickWindow: CGRect?
+    @ObservationIgnored private var reportHide: DispatchWorkItem?
+    @ObservationIgnored private var reportDimmed = false
+    /// Where the hint last sat, so the report can drop down from it.
+    @ObservationIgnored private var reportHintSpot: NSRect?
     @ObservationIgnored private let hints = HintOverlay()
     @ObservationIgnored private let scanBar = ScanProgressBar()
     @ObservationIgnored private let dot = PointerDot()
@@ -100,6 +108,8 @@ public final class NavigationService {
     }
     /// Asked each time a mode starts: false once the free trial has ended without a license.
     @ObservationIgnored public var mayStart: () -> Bool = { true }
+    /// The license a report names, when this copy has one: a hash of its key and Polar's activation ID.
+    @ObservationIgnored public var reportLicense: () -> [String: String]? = { nil }
     /// Called when a mode was refused because the trial has ended.
     @ObservationIgnored public var onTrialEnded: (() -> Void)?
     /// A screenshot is being taken: Scroll mode's dot and outline hold still for it.
@@ -396,6 +406,9 @@ public final class NavigationService {
                 self?.activate(index: index, snapshot: snapshot, generation: generation, action: action)
             }
 
+        case let .sendReport(draft):
+            sendReport(draft)
+
         case let .findScrollWindow(generation):
             guard let pid = targetPID else { return }
             scrollTask?.cancel()
@@ -542,6 +555,7 @@ public final class NavigationService {
         let snapshot = snapshotCounter
         elementsBySnapshot[snapshot] = result.elements
         elementsBySnapshot = elementsBySnapshot.filter { $0.key > snapshot - 3 }
+        clickWindow = result.foundWindow && result.contentTargets > 0 ? result.windowFrame : nil
         lastDiscovery = DiscoveryStats(targets: result.targets.count, milliseconds: result.elapsed * 1000,
                                        visitedNodes: result.visitedNodes, truncated: result.truncated, scope: result.scope,
                                        contentTargets: result.contentTargets)
@@ -734,6 +748,8 @@ public final class NavigationService {
     private func refreshOverlays() {
         let appearance = config.appearance
         watchCopies(router.mode == .cursor)
+        // After the labels are drawn, so the report hint can keep clear of them.
+        defer { refreshReport() }
         switch router.mode {
         case .off:
             badge.hide()
@@ -811,6 +827,130 @@ public final class NavigationService {
                 hud.show(at: NSPoint(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.maxY - size.height - 12))
             }
         }
+    }
+
+    // MARK: - Reports
+
+    /// The "? Report" label in the screen's corner, and the report being written or sent.
+    private func refreshReport() {
+        let draft = router.report
+        let window: CGRect? = switch router.mode {
+        case .click: router.click.flatMap { $0.hasSnapshot && $0.substate == .labels ? clickWindow : nil }
+        case .scroll: router.scroll?.window?.rect
+        default: nil
+        }
+        overlayModel.reportHint = router.mode == .scroll ? "Report pane" : "Report label"
+        overlayModel.reportPanes = min(router.scroll?.areas.count ?? 0, 9)
+        // While a report is open, the labels and outlines behind it dim, so it's clear the keys go to the report.
+        if reportDimmed != (draft != nil) {
+            reportDimmed = draft != nil
+            hints.dim(reportDimmed)
+            scrollOutline.dim(reportDimmed)
+        }
+        // It sits where it covers no label, out of the way of the labels and panes.
+        if draft != nil { overlayModel.reportStatus = nil }
+        if overlayModel.reportStatus != nil, let hint = reportHintSpot {
+            // The confirmation takes the hint's place, lined up on the same side.
+            let size = reportChip.size
+            let x = switch overlayModel.reportHintEdge {
+            case .bottomLeft: hint.minX
+            case .top: hint.midX - size.width / 2
+            case .menuBar, .bottomRight: hint.maxX - size.width
+            }
+            let y = overlayModel.reportHintEdge == .menuBar ? hint.midY - size.height / 2
+                : overlayModel.reportHintEdge == .top ? hint.maxY - size.height : hint.minY
+            reportChip.show(at: NSPoint(x: x, y: y))
+        } else if config.showReportLabel, draft == nil, let window, !router.routingSuspended,
+           let screen = ScreenSpace.screen(containingGlobal: CGPoint(x: window.midX, y: window.midY)) {
+            let size = reportChip.size
+            // In the menu bar just left of a MacBook's notch; without a notch, hanging from the menu bar in the middle.
+            // If a label is there (an app's menus, a browser's tabs), the first bottom corner that's free.
+            let full = screen.frame, usable = screen.visibleFrame
+            var spots: [(NSPoint, CornerTabEdge)] = []
+            if let left = screen.auxiliaryTopLeftArea, !left.isEmpty {
+                spots.append((NSPoint(x: left.maxX - size.width - 10, y: left.midY - size.height / 2), .menuBar))
+            }
+            spots += [
+                (NSPoint(x: usable.midX - size.width / 2, y: usable.maxY - size.height), .top),
+                (NSPoint(x: full.maxX - size.width, y: full.minY), .bottomRight),
+                (NSPoint(x: usable.maxX - size.width, y: usable.minY), .bottomRight),
+                (NSPoint(x: full.minX, y: full.minY), .bottomLeft)
+            ]
+            let top = ScreenSpace.primaryHeight
+            let labels = hints.drawn.values.map { label in
+                NSRect(x: label.body.minX, y: top - label.body.maxY, width: label.body.width, height: label.body.height).insetBy(dx: -3, dy: -3)
+            }
+            let free = spots.first { spot in !labels.contains { $0.intersects(NSRect(origin: spot.0, size: size)) } }
+            let (spot, edge) = free ?? spots[0]
+            overlayModel.reportHintEdge = edge
+            reportHintSpot = NSRect(origin: spot, size: size)
+            reportChip.show(at: spot)
+        } else {
+            reportChip.hide()
+        }
+        overlayModel.report = draft
+        overlayModel.reportApp = targetName ?? frontName ?? ""
+        guard draft != nil else {
+            reportPanel.hide()
+            return
+        }
+        // It drops down from the hint in the menu bar, like a menu; otherwise it opens at the top in the middle.
+        let anchor = window.map { CGPoint(x: $0.midX, y: $0.midY) } ?? output.location()
+        if let screen = ScreenSpace.screen(containingGlobal: anchor) {
+            let size = reportPanel.size
+            let usable = screen.visibleFrame
+            if let hint = reportHintSpot, overlayModel.reportHintEdge == .menuBar, usable.intersects(hint.insetBy(dx: 0, dy: -40)) {
+                let x = min(max(hint.maxX - size.width, usable.minX + 6), usable.maxX - size.width - 6)
+                reportPanel.show(at: NSPoint(x: x, y: usable.maxY - size.height - 4))
+            } else {
+                reportPanel.show(at: NSPoint(x: usable.midX - size.width / 2, y: usable.maxY - size.height - 12))
+            }
+        }
+    }
+
+    /// Reads the scene as it is, leaves the mode, and sends the report in the background.
+    private func sendReport(_ draft: ReportDraft) {
+        guard let pid = targetPID else { return }
+        let click = router.click.map { session in
+            ProblemReport.ClickScene(targets: session.targets, labels: session.labels,
+                                     elements: elementsBySnapshot[session.snapshot] ?? [], drawn: hints.drawn, stats: lastDiscovery,
+                                     scale: config.appearance.hintSize.scale)
+        }
+        let scroll = router.scroll.map { session in
+            ProblemReport.ScrollScene(window: session.window, areas: session.areas, outlined: session.outlined,
+                                      areaIndex: session.areaIndex, lastClick: lastSpots[pid]?.point)
+        }
+        let window = scroll?.window ?? clickWindow.map { HintTarget.Frame(x: $0.minX, y: $0.minY, width: $0.width, height: $0.height) }
+        var fields = ProblemReport.base(draft, pid: pid, window: window, pointer: output.location())
+        fields["settings"] = ProblemReport.settings(config)
+        if let license = reportLicense() { fields["license"] = license }
+        let base = ProblemReport.json(fields)
+        showReportStatus("Sending…", for: nil)
+        record("Report: sending (\(draft.mode.name))")
+        DispatchQueue.main.async { [weak self] in self?.stopNavigation() }
+        Task { @MainActor [weak self] in
+            var sections: [String: Data] = [:]
+            if let click { sections["click"] = await ProblemReport.click(click, pid: pid, names: false) }
+            if let scroll { sections["scroll"] = await ProblemReport.scroll(scroll, pid: pid, names: false) }
+            let problem = await ProblemReport.send(ProblemReport.assemble(base, sections))
+            guard let self else { return }
+            self.record(problem.map { "Report not sent: \($0)" } ?? "Report sent")
+            self.showReportStatus(problem.map { "Couldn't send the report: \($0)" } ?? "✓ Report sent, thanks", for: problem == nil ? 1.4 : 4)
+        }
+    }
+
+    private func showReportStatus(_ text: String, for seconds: Double?) {
+        reportHide?.cancel()
+        overlayModel.reportStatus = text
+        refreshReport()
+        guard let seconds else { return }
+        let hide = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.overlayModel.reportStatus = nil
+            self.refreshReport()
+        }
+        reportHide = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: hide)
     }
 
     private func watchCopies(_ on: Bool) {

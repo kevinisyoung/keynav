@@ -25,7 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // One instance only: a second copy would install a competing event tap.
-        let utilityRun = argument(after: "--snapshot-settings") != nil || arguments.contains("--probe-apps") || arguments.contains("--outline-app") || arguments.contains("--audit-app") || arguments.contains("--label-sample") || arguments.contains("--preview-frames") || arguments.contains("--self-scan")
+        let utilityRun = argument(after: "--snapshot-settings") != nil || arguments.contains("--probe-apps") || arguments.contains("--outline-app") || arguments.contains("--audit-app") || arguments.contains("--report-app") || arguments.contains("--report-sample") || arguments.contains("--label-sample") || arguments.contains("--preview-frames") || arguments.contains("--self-scan")
         if let bundleIdentifier = Bundle.main.bundleIdentifier, !utilityRun {
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
                 .filter { $0 != NSRunningApplication.current }
@@ -113,6 +113,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Task { @MainActor in
                 let text = if let pid { await TargetAudit.run(pid: pid) } else { "not running\n" }
                 try? text.write(to: output, atomically: true, encoding: .utf8)
+                exit(0)
+            }
+            return
+        }
+        // KeyNav --report-app <output.json> <bundle id> <click|scroll> [names] [send]: the report Clicking or Scrolling
+        // would send for that app's focused window. "send" also posts it (to KeyNavReportURL when set).
+        // KeyNav --report-sample <output.png>: the report hint and panel in each state.
+        if let index = arguments.firstIndex(of: "--report-sample"), arguments.indices.contains(index + 1) {
+            if let png = ReportSample.png() { try? png.write(to: URL(fileURLWithPath: arguments[index + 1])) }
+            exit(0)
+        }
+        if let index = arguments.firstIndex(of: "--report-app"), arguments.indices.contains(index + 3) {
+            let output = URL(fileURLWithPath: arguments[index + 1])
+            let pid = NSRunningApplication.runningApplications(withBundleIdentifier: arguments[index + 2]).first?.processIdentifier
+            let mode: InteractionMode = arguments[index + 3] == "scroll" ? .scroll : .click
+            let rest = arguments.dropFirst(index + 4)
+            Task { @MainActor in
+                guard let pid else { exit(1) }
+                let (json, problem) = await ReportProbe.run(pid: pid, mode: mode, names: rest.contains("names"), send: rest.contains("send"))
+                try? json.write(to: output)
+                if rest.contains("send") { print(problem.map { "not sent: \($0)" } ?? "sent") }
                 exit(0)
             }
             return

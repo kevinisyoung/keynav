@@ -252,6 +252,8 @@ public struct KeyNavConfig: Codable, Equatable, Sendable {
     public var clickLabelsMenuBar = true
     /// Also label the Dock.
     public var clickLabelsDock = true
+    /// A "? Report" label in the screen's corner in Clicking and Scrolling. `?` opens a report either way.
+    public var showReportLabel = true
     public var clickAlphabet = KeyNavConfig.defaultAlphabet
     public var modifierTapMaxMilliseconds = 250
     public var excludedBundleIDs: [String] = []
@@ -289,7 +291,7 @@ public struct KeyNavConfig: Codable, Equatable, Sendable {
         case schemaVersion, profileName, cursorEntry, clickEntry, scrollEntry, cursorBindings, clickControls, motion, scrolling
         case dragStyle, exitCursorOnMouse, confineToCurrentDisplay, clickSearchFirst, clickRequireReturn
         case clickStaysActive, clickPointerFallback, clickLabelsMenuBar, clickLabelsDock, clickAlphabet, modifierTapMaxMilliseconds
-        case excludedBundleIDs, appearance, showMenuBarIcon
+        case excludedBundleIDs, appearance, showMenuBarIcon, showReportLabel
     }
 
     public init(from decoder: Decoder) throws {
@@ -318,6 +320,7 @@ public struct KeyNavConfig: Codable, Equatable, Sendable {
         clickPointerFallback = try c.decodeIfPresent(Bool.self, forKey: .clickPointerFallback) ?? d.clickPointerFallback
         clickLabelsMenuBar = try c.decodeIfPresent(Bool.self, forKey: .clickLabelsMenuBar) ?? d.clickLabelsMenuBar
         clickLabelsDock = try c.decodeIfPresent(Bool.self, forKey: .clickLabelsDock) ?? d.clickLabelsDock
+        showReportLabel = try c.decodeIfPresent(Bool.self, forKey: .showReportLabel) ?? d.showReportLabel
         clickAlphabet = try c.decodeIfPresent(String.self, forKey: .clickAlphabet) ?? d.clickAlphabet
         modifierTapMaxMilliseconds = try c.decodeIfPresent(Int.self, forKey: .modifierTapMaxMilliseconds) ?? d.modifierTapMaxMilliseconds
         excludedBundleIDs = try c.decodeIfPresent([String].self, forKey: .excludedBundleIDs) ?? d.excludedBundleIDs
@@ -346,6 +349,7 @@ public struct KeyNavConfig: Codable, Equatable, Sendable {
         try c.encode(clickPointerFallback, forKey: .clickPointerFallback)
         try c.encode(clickLabelsMenuBar, forKey: .clickLabelsMenuBar)
         try c.encode(clickLabelsDock, forKey: .clickLabelsDock)
+        try c.encode(showReportLabel, forKey: .showReportLabel)
         try c.encode(clickAlphabet, forKey: .clickAlphabet)
         try c.encode(modifierTapMaxMilliseconds, forKey: .modifierTapMaxMilliseconds)
         try c.encode(excludedBundleIDs, forKey: .excludedBundleIDs)

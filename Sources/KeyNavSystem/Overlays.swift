@@ -68,6 +68,16 @@ final class OverlayModel {
     var helpRows: [(group: String, rows: [(action: String, keys: String)])] = []
     var helpEntry = ""
     var helpExit = ""
+
+    var report: ReportDraft?
+    var reportApp = ""
+    /// What the corner hint offers to report, which depends on the mode.
+    var reportHint = "Report label"
+    var reportHintEdge = CornerTabEdge.top
+    /// How many numbered panes Scrolling is showing.
+    var reportPanes = 0
+    /// Sending, sent, or why it couldn't be sent; nil while the report is being written.
+    var reportStatus: String?
 }
 
 struct BadgeView: View {
@@ -139,6 +149,119 @@ struct ClickHUDView: View {
     }
 }
 
+enum CornerTabEdge { case menuBar, top, bottomRight, bottomLeft }
+
+/// A key drawn as a small outlined cap: what to press, never something to click.
+private struct KeyCap: View {
+    let text: String
+    var width: CGFloat = 14
+
+    var body: some View {
+        Text(text).font(.system(size: 11, weight: .semibold)).monospacedDigit()
+            .frame(minWidth: width, minHeight: 16)
+            .padding(.horizontal, 2)
+            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.white.opacity(0.45), lineWidth: 0.75))
+    }
+}
+
+/// The dark tab flush in the screen's bottom-right corner, shared by the hint, the report panel, and the
+/// confirmation, so the panel reads as the hint opening up.
+private struct CornerTab<Content: View>: View {
+    /// Where it sits: hanging from the menu bar (rounded below), or flush in a bottom corner (rounded inward).
+    var edge = CornerTabEdge.bottomRight
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .foregroundStyle(.white.opacity(0.75))
+            .background(Color(white: 0.08).opacity(0.82),
+                        in: UnevenRoundedRectangle(topLeadingRadius: [.bottomRight, .menuBar].contains(edge) ? 6 : 0,
+                                               bottomLeadingRadius: [.top, .menuBar].contains(edge) ? 6 : 0,
+                                               bottomTrailingRadius: [.top, .menuBar].contains(edge) ? 6 : 0,
+                                               topTrailingRadius: [.bottomLeft, .menuBar].contains(edge) ? 6 : 0))
+            .environment(\.colorScheme, .dark)
+    }
+}
+
+/// The hint in the screen's corner that opens a report, quiet so it never reads as one of the labels.
+struct ReportChipView: View {
+    let model: OverlayModel
+
+    var body: some View {
+        CornerTab(edge: model.reportHintEdge) {
+            // After a report, it says how that went, in the same place.
+            if let status = model.reportStatus {
+                Text(status).font(.system(size: 11))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+            } else {
+                HStack(spacing: 5) {
+                    KeyCap(text: "?", width: 13)
+                    Text(model.reportHint).font(.system(size: 11))
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+            }
+        }
+        .opacity(model.reportStatus == nil ? 0.8 : 1)
+    }
+}
+
+/// The report, opened from the hint: what each key does, one row each. It sits at the top of the screen, clear of
+/// the labels and the corner, on a solid dark card so it reads over anything.
+struct ReportView: View {
+    let model: OverlayModel
+
+    var body: some View {
+        Group {
+            if let status = model.reportStatus {
+                Text(status).font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+            } else if let draft = model.report {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Text("What went wrong?").font(.system(size: 14, weight: .semibold))
+                        if !model.reportApp.isEmpty {
+                            Text("· \(model.reportApp)").font(.system(size: 14)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                        }
+                        Spacer(minLength: 16)
+                        KeyCap(text: "esc", width: 26)
+                    }
+                    // The field: what's typed so far, or a hint of what helps, with a caret.
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        if draft.text.isEmpty {
+                            Rectangle().fill(Color.accentColor).frame(width: 1.5, height: 15)
+                            Text(draft.mode == .scroll ? " Pane 2 isn't the one I'm in" : " SK clicks the wrong button")
+                                .foregroundStyle(.white.opacity(0.35))
+                        } else {
+                            Text(draft.text)
+                            Rectangle().fill(Color.accentColor).frame(width: 1.5, height: 15)
+                        }
+                    }
+                    .font(.system(size: 13))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 9).padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.white.opacity(0.12)))
+                    HStack(spacing: 6) {
+                        KeyCap(text: "↵", width: 20)
+                        Text("sends, even empty").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    }
+                    Text("Sends your words and the layout, never screenshots.")
+                        .font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(14)
+                .frame(width: 340, alignment: .leading)
+            }
+        }
+        .foregroundStyle(.white.opacity(0.92))
+        .background(Color(white: 0.1).opacity(0.96), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.12)))
+        .environment(\.colorScheme, .dark)
+    }
+
+}
+
 struct HelpView: View {
     let model: OverlayModel
 
@@ -183,7 +306,12 @@ final class HostedOverlay<Content: View> {
         panel.contentView = host
     }
 
-    var size: NSSize { host.fittingSize }
+    /// Measured after laying out, so a view that just changed (a short line growing into a panel) isn't measured
+    /// at its old size and drawn past the top of the screen.
+    var size: NSSize {
+        host.layoutSubtreeIfNeeded()
+        return host.fittingSize
+    }
 
     func show(at origin: NSPoint) {
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
@@ -313,6 +441,8 @@ final class HintCanvas: NSView {
 @MainActor
 final class HintOverlay {
     private var panels: [OverlayPanel] = []
+    /// Where each label was last drawn, in global points (top-left origin): its body, and the tip of its arrow.
+    private(set) var drawn: [String: (body: CGRect, tip: CGPoint)] = [:]
 
     struct Item {
         var label: String
@@ -324,11 +454,18 @@ final class HintOverlay {
     func render(_ items: [Item], highlight: HintTarget.Frame?, appearance: AppearanceSettings) {
         ensurePanels()
         let fontSize = 10.5 * appearance.hintSize.scale
+        drawn = [:]
         for panel in panels {
             guard let canvas = panel.contentView as? HintCanvas else { continue }
             canvas.fontSize = fontSize
             canvas.opacity = min(max(appearance.hintOpacity, 0.6), 1)
             canvas.chips = layout(items, in: panel.frame, fontSize: fontSize)
+            let top = ScreenSpace.primaryHeight
+            for chip in canvas.chips {
+                let body = chip.rect.offsetBy(dx: panel.frame.minX, dy: panel.frame.minY)
+                drawn[chip.text] = (CGRect(x: body.minX, y: top - body.maxY, width: body.width, height: body.height),
+                                    CGPoint(x: chip.anchor.x + panel.frame.minX, y: top - (chip.anchor.y + panel.frame.minY)))
+            }
             canvas.highlight = highlight.flatMap { frame in
                 let rect = ScreenSpace.appKitRect(fromGlobal: frame.rect)
                 return panel.frame.intersects(rect) ? rect.offsetBy(dx: -panel.frame.minX, dy: -panel.frame.minY) : nil
@@ -395,6 +532,12 @@ final class HintOverlay {
     func clear() {
         panels.forEach { $0.orderOut(nil) }
         panels.removeAll()
+        drawn = [:]
+    }
+
+    /// Fades the labels back while something in front of them has the keys.
+    func dim(_ on: Bool) {
+        for panel in panels { panel.alphaValue = on ? 0.35 : 1 }
     }
 }
 
@@ -649,6 +792,11 @@ final class ScrollOutline {
         for panel in panels { panel.orderOut(nil) }
     }
 
+    /// Fades the outlines back while something in front of them has the keys.
+    func dim(_ on: Bool) {
+        for panel in panels where panel.isVisible { panel.alphaValue = on ? 0.35 : 1 }
+    }
+
     private final class OutlineView: NSView {
         /// 0 for a pane without a number.
         var number = 0
@@ -764,5 +912,42 @@ final class KeyCatcher {
             handle?(event)
             return true
         }
+    }
+}
+
+/// The report hint and panel in each state, drawn to a PNG for checking how they look.
+public enum ReportSample {
+    @MainActor
+    public static func png() -> Data? {
+        func model(_ configure: (OverlayModel) -> Void) -> OverlayModel {
+            let m = OverlayModel()
+            m.reportApp = "Safari"
+            configure(m)
+            return m
+        }
+        var typed = ReportDraft(mode: .click)
+        for character in "SK opens the wrong menu" {
+            _ = typed.handle(KeyEvent(kind: .down, code: 0, character: String(character)))
+        }
+        let states: [OverlayModel] = [
+            model { $0.report = ReportDraft(mode: .click) },
+            model { $0.report = typed },
+            model { $0.report = ReportDraft(mode: .scroll) }
+        ]
+        let view = HStack(alignment: .bottom, spacing: 24) {
+            VStack(alignment: .trailing, spacing: 12) {
+                ReportChipView(model: model { $0.reportHint = "Report label"; $0.reportHintEdge = .menuBar })
+                ReportChipView(model: model { $0.reportStatus = "Sending…"; $0.reportHintEdge = .menuBar })
+                ReportChipView(model: model { $0.reportStatus = "✓ Report sent, thanks"; $0.reportHintEdge = .menuBar })
+            }
+            ForEach(states.indices, id: \.self) { ReportView(model: states[$0]) }
+        }
+        .padding(24)
+        .background(Color(red: 0.23, green: 0.29, blue: 0.36))
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
     }
 }

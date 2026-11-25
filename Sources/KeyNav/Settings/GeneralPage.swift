@@ -304,6 +304,7 @@ struct ResetSheet: View {
             config.clickPointerFallback = defaults.clickPointerFallback
             config.clickLabelsMenuBar = defaults.clickLabelsMenuBar
             config.clickLabelsDock = defaults.clickLabelsDock
+            config.showReportLabel = defaults.showReportLabel
         case .everything:
             config = defaults
         }

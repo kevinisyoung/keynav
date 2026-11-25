@@ -322,10 +322,65 @@ public enum AccessibilityTargets {
         let top: CGFloat?
         let bottom: CGFloat?
         var scrolls = false
+        var role: String?
+        var evidence: CGRect?
+    }
+
+    /// How a pane scan went, for a report: every block that might have been a pane, and why each was kept or dropped.
+    public struct ScrollTrace: Sendable {
+        public struct Candidate: Sendable {
+            public var rect: CGRect
+            public var page: CGRect?
+            public var pane: HintTarget.Frame?
+            public var scrolls: Bool
+            /// Nil when it became a pane.
+            public var dropped: String?
+            public var role: String?
+            /// Its edges that count for overflow (nil: the page's own edge, which doesn't).
+            public var top: CGFloat?
+            public var bottom: CGFloat?
+            /// The first thing found reaching out of it, which made it count as scrolling.
+            public var evidence: CGRect?
+        }
+        public var window: HintTarget.Frame?
+        public var areas: [HintTarget.Frame] = []
+        /// Elements the app itself calls scroll areas.
+        public var scrollAreas: [HintTarget.Frame] = []
+        public var candidates: [Candidate] = []
+        /// Blocks big enough to be a pane that never became a candidate, and why.
+        public var rejected: [Candidate] = []
+        public var pageSlivers: [(page: CGRect, count: Int)] = []
+        public var visited = 0
+        public var timedOut = false
+        public var milliseconds = 0.0
+    }
+
+    /// The focused window's panes as `scrollAreas(pid:afterWaking:)` finds them, with how the scan got there.
+    public static func scrollTrace(pid: pid_t) async -> ScrollTrace {
+        let work: @Sendable () -> ScrollTrace = {
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, 0.25)
+            var trace = ScrollTrace()
+            guard let window = windowOf(app), let windowFrame = frame(of: window) else { return trace }
+            trace.window = windowFrame
+            let started = ProcessInfo.processInfo.systemUptime
+            trace.areas = scrollAreas(in: window, frame: windowFrame, seconds: 1.5, trace: &trace)
+            trace.milliseconds = (ProcessInfo.processInfo.systemUptime - started) * 1000
+            return trace
+        }
+        if pid == getpid() { return await MainActor.run { work() } }
+        return await Task.detached(priority: .userInitiated) { work() }.value
     }
 
     private static func scrollAreas(in window: AXUIElement, frame windowFrame: HintTarget.Frame,
                                     maxNodes: Int = 3_000, seconds: Double = 0.6) -> [HintTarget.Frame] {
+        var trace = ScrollTrace()
+        return scrollAreas(in: window, frame: windowFrame, maxNodes: maxNodes, seconds: seconds, trace: &trace)
+    }
+
+    private static func scrollAreas(in window: AXUIElement, frame windowFrame: HintTarget.Frame,
+                                    maxNodes: Int = 3_000, seconds: Double = 0.6,
+                                    trace: inout ScrollTrace) -> [HintTarget.Frame] {
         let deadline = ProcessInfo.processInfo.systemUptime + seconds
         var areas: [HintTarget.Frame] = []
         var candidates: [ScrollCandidate] = []
@@ -344,6 +399,7 @@ public enum AccessibilityTargets {
             if let rect {
                 for index in within where !candidates[index].scrolls && shows(rect.rect, scrolledOutOf: candidates[index]) {
                     candidates[index].scrolls = true
+                    candidates[index].evidence = rect.rect
                 }
                 // Only the bottom edge counts: a pane under a header (Claude's chat) leaves what scrolled up at the
                 // page's top, and screen reader hints hide there too. Text and links count, not the empty layout
@@ -369,9 +425,16 @@ public enum AccessibilityTargets {
                         let top = windowSized || rect.y > bounds.minY + 1 ? CGFloat(rect.y) : nil
                         let bottom = windowSized || rect.y + rect.height < bounds.maxY - 1 ? CGFloat(rect.y + rect.height) : nil
                         if top != nil || bottom != nil {
-                            candidates.append(ScrollCandidate(rect: rect.rect, page: page, pane: pane, top: top, bottom: bottom))
+                            candidates.append(ScrollCandidate(rect: rect.rect, page: page, pane: pane, top: top, bottom: bottom,
+                                                              role: elementRole))
                             inside.append(candidates.count - 1)
+                        } else if trace.rejected.count < 200 {
+                            trace.rejected.append(.init(rect: rect.rect, page: page, pane: pane, scrolls: false,
+                                                        dropped: "fills its page, so the page scrolls instead", role: elementRole))
                         }
+                    } else if rect.width >= 120, rect.height >= 120, trace.rejected.count < 200 {
+                        trace.rejected.append(.init(rect: rect.rect, page: page, pane: nil, scrolls: false,
+                                                    dropped: "not pane-shaped", role: elementRole))
                     }
                 }
             }
@@ -383,7 +446,20 @@ public enum AccessibilityTargets {
             let childPage = page ?? (elementRole == "AXWebArea" ? rect?.rect : nil)
             for child in (childrenOf(element) ?? []).reversed() { stack.append((child, childPage, inside)) }
         }
+        trace.visited = visited
+        trace.timedOut = ProcessInfo.processInfo.systemUptime >= deadline
+        trace.scrollAreas = areas
+        trace.pageSlivers = pageSlivers
         let scrollingPages = pageSlivers.filter { $0.count >= 3 }.map(\.page)
+        trace.candidates = candidates.map { candidate in
+            let dropped: String? = if !candidate.scrolls { "nothing scrolled out of it" }
+                else if candidate.page.map(scrollingPages.contains) ?? false { "its page scrolls as a whole" }
+                else if candidate.pane == nil { "window-sized group, only fills beside panes" }
+                else { nil }
+            return ScrollTrace.Candidate(rect: candidate.rect, page: candidate.page, pane: candidate.pane,
+                                         scrolls: candidate.scrolls, dropped: dropped, role: candidate.role,
+                                         top: candidate.top, bottom: candidate.bottom, evidence: candidate.evidence)
+        }
         areas += candidates.compactMap { $0.scrolls && !($0.page.map(scrollingPages.contains) ?? false) ? $0.pane : nil }
         // What a window-sized group shows is what the panes beside it leave: Messages' conversation, right of the
         // list. A web app's window wrappers are such groups too; its panes are found in the page instead.
