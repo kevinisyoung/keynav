@@ -199,8 +199,8 @@ async function dashboard(env, url) {
   const q = (sql, ...args) => env.STATS.prepare(sql).bind(...args);
   const [daily, totals, refs, countries, devices, versions, installs, recent] = (await env.STATS.batch([
     q(`SELECT day, COUNT(DISTINCT CASE WHEN kind = 'view' THEN visitor END) AS visitors,
-              SUM(kind = 'download') AS downloads FROM events WHERE day >= ? GROUP BY day`, since),
-    q(`SELECT SUM(kind = 'view') AS views, SUM(kind = 'download') AS downloads, SUM(kind = 'buy') AS buys,
+              SUM(kind = 'download' AND device = 'Mac') AS downloads FROM events WHERE day >= ? GROUP BY day`, since),
+    q(`SELECT SUM(kind = 'view') AS views, SUM(kind = 'download' AND device = 'Mac') AS downloads, SUM(kind = 'buy') AS buys,
               SUM(kind = 'play') AS plays FROM events WHERE day >= ?`, since),
     q(`SELECT COALESCE(source, ref) AS name, COUNT(DISTINCT day || visitor) AS n FROM events
        WHERE day >= ? AND kind = 'view' AND COALESCE(source, ref) IS NOT NULL GROUP BY name ORDER BY n DESC LIMIT 12`, since),
@@ -211,7 +211,7 @@ async function dashboard(env, url) {
     q(`SELECT version AS name, COUNT(DISTINCT visitor) AS n FROM events
        WHERE ts >= ? AND kind = 'update' GROUP BY name ORDER BY n DESC`, Date.now() - DAY),
     q(`SELECT COUNT(DISTINCT visitor) AS n FROM events WHERE ts >= ? AND kind = 'update'`, Date.now() - DAY),
-    q(`SELECT ts, kind, ref, source, country, device FROM events WHERE kind != 'update' ORDER BY ts DESC LIMIT 25`),
+    q(`SELECT ts, kind, ref, source, country, device FROM events WHERE kind != 'update' AND (kind != 'download' OR device = 'Mac') ORDER BY ts DESC LIMIT 25`),
   ])).map((r) => r.results);
 
   const byDay = new Map(daily.map((d) => [d.day, d]));
@@ -234,13 +234,13 @@ async function dashboard(env, url) {
     </header>
     <section class="tiles">
       ${tile("Visitors", visitors)}
-      ${tile("Downloads", t.downloads || 0, `${rate} of visitors`)}
+      ${tile("Mac downloads", t.downloads || 0, `${rate} of visitors`)}
       ${tile("Buy clicks", t.buys || 0, "Sales are in Polar")}
       ${tile("Active installs", installs[0]?.n || 0, "Checked for updates today")}
     </section>
     <section class="charts">
       ${bars("Visitors per day", series, "visitors")}
-      ${bars("Downloads per day", series, "downloads")}
+      ${bars("Mac downloads per day", series, "downloads")}
     </section>
     <section class="lists">
       ${list("Where visitors come from", refs, (n) => n, "No referrers yet")}
